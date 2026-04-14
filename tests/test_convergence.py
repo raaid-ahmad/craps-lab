@@ -39,15 +39,22 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from craps_lab.bets import Outcome
 from craps_lab.dice import DiceRoller
+from craps_lab.play import play_dont_pass, play_pass_line
 from craps_lab.probability import (
     MAX_TWO_DICE_SUM,
     MIN_TWO_DICE_SUM,
+    dont_pass_house_edge,
+    pass_line_house_edge,
     two_dice_sum_pmf,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
+    from fractions import Fraction
+
+    from craps_lab.play import RollSource
 
 _NUM_TRIALS: int = 100_000
 _SEED: int = 0xC0FFEE
@@ -93,3 +100,64 @@ def test_sample_mean_converges_to_analytical_mean(
 
     sem = math.sqrt(_TWO_DICE_VARIANCE / _NUM_TRIALS)
     assert abs(sample_mean - _TWO_DICE_MEAN) <= _TOLERANCE_SIGMA * sem
+
+
+# ---------------------------------------------------------------------------
+# Line bet convergence: pass line and don't pass
+# ---------------------------------------------------------------------------
+#
+# Each line-bet game resolves to WIN, LOSE, or (don't pass only) PUSH, so the
+# per-game P/L is +1, -1, or 0. The empirical house edge over ``n`` games is
+#
+#     edge_hat = (count_LOSE - count_WIN) / n = -mean(P/L).
+#
+# Var(P/L) <= 1 (achieved when there are no pushes; slightly less with
+# pushes), so SEM of the sample edge is bounded above by ``1 / sqrt(n)``.
+# The 5-sigma tolerance below uses that upper bound as a conservative band,
+# which keeps the test principled (no hand-tuning) while tolerating the
+# small push-induced variance reduction on don't pass.
+
+_NUM_GAMES: int = 200_000
+_GAMES_SEED: int = 0xB0BA
+
+
+def _empirical_edge(
+    n_games: int,
+    seed: int,
+    play_func: Callable[[RollSource], Outcome],
+) -> float:
+    roller = DiceRoller(seed=seed)
+    win = 0
+    lose = 0
+    for _ in range(n_games):
+        outcome = play_func(roller)
+        if outcome == Outcome.WIN:
+            win += 1
+        elif outcome == Outcome.LOSE:
+            lose += 1
+    return (lose - win) / n_games
+
+
+@pytest.mark.parametrize(
+    ("play_func", "edge_func", "label"),
+    [
+        (play_pass_line, pass_line_house_edge, "pass_line"),
+        (play_dont_pass, dont_pass_house_edge, "dont_pass"),
+    ],
+)
+def test_line_bet_empirical_edge_matches_analytical(
+    play_func: Callable[[RollSource], Outcome],
+    edge_func: Callable[[], Fraction],
+    label: str,
+) -> None:
+    empirical = _empirical_edge(_NUM_GAMES, _GAMES_SEED, play_func)
+    analytical = float(edge_func())
+
+    sem_upper_bound = math.sqrt(1.0 / _NUM_GAMES)
+    tolerance = _TOLERANCE_SIGMA * sem_upper_bound
+
+    assert abs(empirical - analytical) <= tolerance, (
+        f"{label}: empirical={empirical:.6f}, analytical={analytical:.6f}, "
+        f"deviation={abs(empirical - analytical):.6f} > "
+        f"{_TOLERANCE_SIGMA} sigma ({tolerance:.6f})"
+    )

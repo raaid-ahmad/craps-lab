@@ -8,6 +8,7 @@ import pytest
 
 from craps_lab.bets import POINT_NUMBERS
 from craps_lab.probability import (
+    LAY_3_4_5X,
     MAX_TWO_DICE_SUM,
     MIN_TWO_DICE_SUM,
     ODDS_3_4_5X,
@@ -19,6 +20,7 @@ from craps_lab.probability import (
     dont_come_bet_win_probability,
     dont_pass_house_edge,
     dont_pass_lay_odds_expected_value,
+    dont_pass_plus_lay_odds_edge,
     dont_pass_push_probability,
     dont_pass_win_probability,
     pass_line_house_edge,
@@ -300,3 +302,35 @@ def test_pass_line_composite_edge_decreases_monotonically_with_odds() -> None:
     e5 = pass_line_plus_odds_edge(uniform_odds_policy(5))
     e10 = pass_line_plus_odds_edge(uniform_odds_policy(10))
     assert e0 > e1 > e2 > e3 > e5 > e10
+
+
+def test_lay_3_4_5x_is_uniform_6x_at_every_point() -> None:
+    for point in POINT_NUMBERS:
+        assert LAY_3_4_5X[point] == Fraction(6)
+
+
+def test_dont_pass_plus_zero_lay_equals_dont_pass_edge() -> None:
+    zero_policy = uniform_odds_policy(0)
+    assert dont_pass_plus_lay_odds_edge(zero_policy) == dont_pass_house_edge()
+
+
+def test_dont_pass_plus_3_4_5x_lay_is_exactly_3_over_1100() -> None:
+    """E[lay] = 6 * 24/36 = 4, total = 5, edge = (3/220)/5 = 3/1100."""
+    assert dont_pass_plus_lay_odds_edge(LAY_3_4_5X) == Fraction(3, 1100)
+
+
+def test_dont_pass_plus_3_4_5x_lay_matches_canonical_percentage() -> None:
+    edge = float(dont_pass_plus_lay_odds_edge(LAY_3_4_5X))
+    assert 0.00272 < edge < 0.00274  # canonical ~0.273%
+
+
+def test_dont_pass_plus_lay_composite_is_lower_than_dont_pass_alone() -> None:
+    assert dont_pass_plus_lay_odds_edge(LAY_3_4_5X) < dont_pass_house_edge()
+
+
+def test_dont_pass_3_4_5x_lay_composite_is_lower_than_pass_3_4_5x_composite() -> None:
+    # Don't pass with lay is *more* edge-efficient than pass with take
+    # at 3-4-5x, because uniform 6x lay > the 25/9 average for 3-4-5x take.
+    dp = dont_pass_plus_lay_odds_edge(LAY_3_4_5X)
+    pl = pass_line_plus_odds_edge(ODDS_3_4_5X)
+    assert dp < pl

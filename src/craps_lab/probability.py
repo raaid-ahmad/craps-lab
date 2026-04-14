@@ -396,3 +396,53 @@ def pass_line_plus_odds_edge(odds_policy: Mapping[int, Fraction]) -> Fraction:
     )
     total_wagered = Fraction(1) + expected_odds_bet
     return pass_line_house_edge() / total_wagered
+
+
+LAY_3_4_5X: Final[Mapping[int, Fraction]] = dict.fromkeys(POINT_NUMBERS, Fraction(6))
+"""The canonical don't-pass lay policy equivalent to 3-4-5x take odds.
+
+At the casino floor, a "3-4-5x" maximum on the don't-pass side means
+the player can lay enough to *win* 3x on 4/10, 4x on 5/9, and 5x on
+6/8 — the same maximum win amounts as a pass-line player would take.
+Because the lay payout ratios (1:2, 2:3, 5:6) invert the take-odds
+ratios, laying enough to win 3x on point 4 means laying 6, laying
+enough to win 4x on point 5 means laying 6, and laying enough to
+win 5x on point 6 means laying 6 — so the policy is *uniform* 6x
+lay across all six points. Another nice mechanical feature of the
+3-4-5x system.
+"""
+
+
+def dont_pass_plus_lay_odds_edge(lay_policy: Mapping[int, Fraction]) -> Fraction:
+    """Return the composite don't pass + lay odds house edge per unit wagered.
+
+    Don't-pass expected loss per round is unchanged at ``3/220``
+    (lay odds are zero-EV — see
+    :py:func:`dont_pass_lay_odds_expected_value` — so they contribute
+    nothing to the numerator). The denominator grows by the average
+    lay bet,
+
+        E[lay bet] = sum_{p in points} P(S = p) * lay_policy[p],
+
+    to ``1 + E[lay bet]``. The composite edge is therefore
+
+        edge = (3 / 220) / (1 + E[lay bet]).
+
+    For the canonical ``LAY_3_4_5X`` policy (uniform 6x lay),
+    ``E[lay bet] = 6 * 24/36 = 4``, total wagered is ``5``, and the
+    composite edge is ``(3/220) / 5 = 3/1100 ~ 0.273%``.
+
+    That is *lower* than the pass-line-plus-3-4-5x composite edge
+    of ``7/1870 ~ 0.374%``: the don't-pass side becomes more
+    edge-efficient under free odds because the lay amounts per
+    unit line bet are larger than the take amounts (uniform 6x
+    vs. the 25/9 average for 3-4-5x take), which dilutes the
+    already-smaller don't-pass numerator more aggressively.
+    """
+    pmf = two_dice_sum_pmf()
+    expected_lay_bet = sum(
+        (pmf[p] * lay_policy[p] for p in POINT_NUMBERS),
+        start=Fraction(0),
+    )
+    total_wagered = Fraction(1) + expected_lay_bet
+    return dont_pass_house_edge() / total_wagered

@@ -39,7 +39,17 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from craps_lab.bets import Outcome
+from craps_lab.bets import (
+    DONT_PASS_BAR,
+    DONT_PASS_COME_OUT_LOSES,
+    DONT_PASS_COME_OUT_WINS,
+    DONT_PASS_LAY_PAYOUT_RATIO,
+    PASS_LINE_CRAPS_LOSERS,
+    PASS_LINE_NATURAL_WINNERS,
+    PASS_ODDS_PAYOUT_RATIO,
+    SEVEN,
+    Outcome,
+)
 from craps_lab.dice import DiceRoller
 from craps_lab.play import (
     play_come_bet,
@@ -48,10 +58,14 @@ from craps_lab.play import (
     play_pass_line,
 )
 from craps_lab.probability import (
+    LAY_3_4_5X,
     MAX_TWO_DICE_SUM,
     MIN_TWO_DICE_SUM,
+    ODDS_3_4_5X,
     dont_pass_house_edge,
+    dont_pass_plus_lay_odds_edge,
     pass_line_house_edge,
+    pass_line_plus_odds_edge,
     two_dice_sum_pmf,
 )
 
@@ -198,4 +212,120 @@ def test_come_bet_empirical_edge_matches_line_bet_exactly(
     line_empirical = _empirical_edge(_EQUIVALENCE_N_GAMES, _GAMES_SEED, line_func)
     assert come_empirical == line_empirical, (
         f"{label}: come empirical {come_empirical}, line empirical {line_empirical}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Composite edge convergence: pass line + odds and don't pass + lay odds
+# ---------------------------------------------------------------------------
+#
+# A composite Monte Carlo tracks two running totals per game: total P/L and
+# total amount wagered. The empirical composite edge is -sum(P/L) / sum(wagered)
+# at the end of the run. That matches the analytical
+# ``pass_line_plus_odds_edge(policy)`` and ``dont_pass_plus_lay_odds_edge(policy)``
+# definitions, which both have the shape ``base_edge / (1 + avg_odds_wagered)``.
+#
+# Tolerance note: per-game P/L at 3-4-5x odds has a wider range than the line
+# bets alone ([-6, +7] vs. [-1, +1]) because odds bets amplify both wins and
+# losses. Over 200,000 games, the empirical composite edge is within a few
+# tenths of a percentage point of the analytical value — we use a 0.002
+# absolute tolerance, a few times the actual SEM but still well below the
+# analytical values (~0.374% and ~0.273%).
+
+_COMPOSITE_N_GAMES: int = 200_000
+_COMPOSITE_EDGE_TOLERANCE: float = 0.002
+
+
+def _pass_line_plus_odds_composite_edge(
+    n_games: int,
+    seed: int,
+    odds_policy: Mapping[int, Fraction],
+) -> float:
+    roller = DiceRoller(seed=seed)
+    total_pl = 0.0
+    total_wagered = 0.0
+    for _ in range(n_games):
+        total_wagered += 1.0
+        come_out = roller.roll().total
+        if come_out in PASS_LINE_NATURAL_WINNERS:
+            total_pl += 1.0
+            continue
+        if come_out in PASS_LINE_CRAPS_LOSERS:
+            total_pl -= 1.0
+            continue
+        point = come_out
+        odds_bet = float(odds_policy[point])
+        odds_payout = float(PASS_ODDS_PAYOUT_RATIO[point])
+        total_wagered += odds_bet
+        while True:
+            roll = roller.roll().total
+            if roll == SEVEN:
+                total_pl -= 1.0 + odds_bet
+                break
+            if roll == point:
+                total_pl += 1.0 + odds_bet * odds_payout
+                break
+    return -total_pl / total_wagered
+
+
+def _dont_pass_plus_lay_composite_edge(
+    n_games: int,
+    seed: int,
+    lay_policy: Mapping[int, Fraction],
+) -> float:
+    roller = DiceRoller(seed=seed)
+    total_pl = 0.0
+    total_wagered = 0.0
+    for _ in range(n_games):
+        total_wagered += 1.0
+        come_out = roller.roll().total
+        if come_out in DONT_PASS_COME_OUT_WINS:
+            total_pl += 1.0
+            continue
+        if come_out in DONT_PASS_COME_OUT_LOSES:
+            total_pl -= 1.0
+            continue
+        if come_out == DONT_PASS_BAR:
+            # Push: no P/L, no additional wager
+            continue
+        point = come_out
+        lay_bet = float(lay_policy[point])
+        lay_payout = float(DONT_PASS_LAY_PAYOUT_RATIO[point])
+        total_wagered += lay_bet
+        while True:
+            roll = roller.roll().total
+            if roll == SEVEN:
+                total_pl += 1.0 + lay_bet * lay_payout
+                break
+            if roll == point:
+                total_pl -= 1.0 + lay_bet
+                break
+    return -total_pl / total_wagered
+
+
+def test_pass_line_plus_3_4_5x_composite_edge_matches_analytical() -> None:
+    empirical = _pass_line_plus_odds_composite_edge(
+        _COMPOSITE_N_GAMES,
+        _GAMES_SEED,
+        ODDS_3_4_5X,
+    )
+    analytical = float(pass_line_plus_odds_edge(ODDS_3_4_5X))
+    deviation = abs(empirical - analytical)
+    assert deviation < _COMPOSITE_EDGE_TOLERANCE, (
+        f"pass+odds composite: empirical={empirical:.6f}, "
+        f"analytical={analytical:.6f}, deviation={deviation:.6f}"
+    )
+
+
+def test_dont_pass_plus_3_4_5x_lay_composite_edge_matches_analytical() -> None:
+    empirical = _dont_pass_plus_lay_composite_edge(
+        _COMPOSITE_N_GAMES,
+        _GAMES_SEED,
+        LAY_3_4_5X,
+    )
+    analytical = float(dont_pass_plus_lay_odds_edge(LAY_3_4_5X))
+    deviation = abs(empirical - analytical)
+    assert deviation < _COMPOSITE_EDGE_TOLERANCE, (
+        f"dont pass+lay composite: empirical={empirical:.6f}, "
+        f"analytical={analytical:.6f}, deviation={deviation:.6f}"
     )

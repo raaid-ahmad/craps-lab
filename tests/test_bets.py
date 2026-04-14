@@ -31,6 +31,8 @@ def test_outcome_is_subclass_of_str() -> None:
 def test_bet_type_values() -> None:
     assert BetType.PASS_LINE.value == "pass_line"
     assert BetType.DONT_PASS.value == "dont_pass"
+    assert BetType.COME.value == "come"
+    assert BetType.DONT_COME.value == "dont_come"
 
 
 def test_seven_constant() -> None:

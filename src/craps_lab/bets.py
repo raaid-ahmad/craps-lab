@@ -41,6 +41,8 @@ class BetType(StrEnum):
 
     PASS_LINE = "pass_line"  # noqa: S105 -- StrEnum value, not a password
     DONT_PASS = "dont_pass"  # noqa: S105 -- StrEnum value, not a password
+    COME = "come"
+    DONT_COME = "dont_come"
 
 
 SEVEN: Final = 7

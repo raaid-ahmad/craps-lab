@@ -8,7 +8,12 @@ import pytest
 
 from craps_lab.bets import Outcome
 from craps_lab.dice import DiceRoll, DiceRoller
-from craps_lab.play import play_dont_pass, play_pass_line
+from craps_lab.play import (
+    play_come_bet,
+    play_dont_come_bet,
+    play_dont_pass,
+    play_pass_line,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -99,3 +104,20 @@ def test_play_dont_pass_with_real_roller_is_deterministic_under_seed() -> None:
     a = DiceRoller(seed=123)
     b = DiceRoller(seed=123)
     assert play_dont_pass(a) == play_dont_pass(b)
+
+
+def test_play_come_bet_equivalent_to_play_pass_line_under_same_seed() -> None:
+    # Over many games with the same seed, play_come_bet and
+    # play_pass_line should produce identical outcomes in the same
+    # order, because the former is a thin delegation to the latter.
+    come_roller = DiceRoller(seed=0xC0C0)
+    line_roller = DiceRoller(seed=0xC0C0)
+    for _ in range(500):
+        assert play_come_bet(come_roller) == play_pass_line(line_roller)
+
+
+def test_play_dont_come_bet_equivalent_to_play_dont_pass_under_same_seed() -> None:
+    come_roller = DiceRoller(seed=0xDEAD)
+    line_roller = DiceRoller(seed=0xDEAD)
+    for _ in range(500):
+        assert play_dont_come_bet(come_roller) == play_dont_pass(line_roller)

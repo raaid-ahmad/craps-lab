@@ -89,3 +89,32 @@ def play_dont_pass(roller: RollSource) -> Outcome:
             return Outcome.WIN
         if roll == point:
             return Outcome.LOSE
+
+
+def play_come_bet(roller: RollSource) -> Outcome:
+    """Play one come bet to resolution.
+
+    A come bet is placed during the table's point phase and its
+    next roll plays the role of a pass line come-out — 7 or 11 wins,
+    2/3/12 loses, 4-10 establishes the *come point*, which is then
+    resolved vs. 7 by the same geometric process as pass line's.
+
+    From the bet's own perspective the game tree is *identical* to
+    pass line's (the dice have no memory), so this runner delegates
+    directly to :py:func:`play_pass_line`. The distinction between
+    "pass line" and "come bet" only matters at the session level,
+    where multiple come bets can be active simultaneously and share
+    a seven-out; that bookkeeping belongs to the game engine in a
+    later phase, not to a one-shot play runner.
+    """
+    return play_pass_line(roller)
+
+
+def play_dont_come_bet(roller: RollSource) -> Outcome:
+    """Play one don't come bet to resolution.
+
+    Mirror image of :py:func:`play_come_bet` with the bar-12 rule,
+    and — for the same no-memory reason — semantically equivalent
+    to :py:func:`play_dont_pass`. Delegates to it directly.
+    """
+    return play_dont_pass(roller)

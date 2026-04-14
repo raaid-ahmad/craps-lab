@@ -43,7 +43,7 @@ seven.
 from __future__ import annotations
 
 from fractions import Fraction
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from craps_lab.bets import (
     DONT_PASS_BAR,
@@ -54,6 +54,9 @@ from craps_lab.bets import (
     POINT_NUMBERS,
     SEVEN,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 NUM_DICE: Final = 2
 MIN_FACE: Final = 1
@@ -332,3 +335,64 @@ def dont_pass_lay_odds_expected_value(point: int) -> Fraction:
     p_win = Fraction(1) - p_lose
     payout = DONT_PASS_LAY_PAYOUT_RATIO[point]
     return p_win * payout + p_lose * Fraction(-1)
+
+
+ODDS_3_4_5X: Final[Mapping[int, Fraction]] = {
+    4: Fraction(3),
+    5: Fraction(4),
+    6: Fraction(5),
+    8: Fraction(5),
+    9: Fraction(4),
+    10: Fraction(3),
+}
+"""The canonical 3-4-5x odds policy.
+
+Allows 3x odds on points 4 and 10, 4x on 5 and 9, and 5x on 6 and 8.
+The multipliers are calibrated so that a maximum odds bet always
+pays exactly 6 times the line bet on a win, regardless of the point:
+3x on a 2:1 payout, 4x on a 3:2 payout, and 5x on a 6:5 payout all
+produce the same 6x return. Uniform payout simplifies dealer
+calculations and is now the most common max in US casinos.
+"""
+
+
+def uniform_odds_policy(multiplier: int | Fraction) -> Mapping[int, Fraction]:
+    """Return an odds policy with the same multiplier for every point.
+
+    Useful for exploring how the composite pass-line edge depends on
+    the odds multiplier — at ``1x``, ``2x``, ``3x``, ``5x``, ``10x``,
+    and the rare ``100x`` found in a handful of Vegas casinos.
+    """
+    return dict.fromkeys(POINT_NUMBERS, Fraction(multiplier))
+
+
+def pass_line_plus_odds_edge(odds_policy: Mapping[int, Fraction]) -> Fraction:
+    """Return the composite pass line + odds house edge per unit wagered.
+
+    Pass-line expected loss per round is unchanged at ``7/495`` (free
+    odds are zero-EV — see :py:func:`pass_odds_expected_value` — so
+    they contribute nothing to the numerator). What changes is the
+    *denominator*: the average total amount wagered per round grows
+    by the average odds bet,
+
+        E[odds bet] = sum_{p in points} P(S = p) * odds_policy[p],
+
+    to ``1 + E[odds bet]``. The composite edge is therefore
+
+        edge = (7 / 495) / (1 + E[odds bet]).
+
+    For the canonical ``ODDS_3_4_5X`` policy, ``E[odds bet] = 25/9``,
+    total wagered is ``34/9``, and the composite edge is
+    ``(7/495) / (34/9) = 7/1870 ~ 0.374%`` — the standard "3-4-5x
+    odds" number quoted in craps literature.
+
+    This function accepts any policy, not just 3-4-5x, so exploring
+    uniform 1x / 2x / 5x / 10x / 100x is a one-line substitution.
+    """
+    pmf = two_dice_sum_pmf()
+    expected_odds_bet = sum(
+        (pmf[p] * odds_policy[p] for p in POINT_NUMBERS),
+        start=Fraction(0),
+    )
+    total_wagered = Fraction(1) + expected_odds_bet
+    return pass_line_house_edge() / total_wagered

@@ -10,6 +10,7 @@ from craps_lab.bets import POINT_NUMBERS
 from craps_lab.probability import (
     MAX_TWO_DICE_SUM,
     MIN_TWO_DICE_SUM,
+    ODDS_3_4_5X,
     TWO_DICE_SAMPLE_SPACE_SIZE,
     come_bet_house_edge,
     come_bet_win_probability,
@@ -21,11 +22,13 @@ from craps_lab.probability import (
     dont_pass_push_probability,
     dont_pass_win_probability,
     pass_line_house_edge,
+    pass_line_plus_odds_edge,
     pass_line_win_probability,
     pass_odds_expected_value,
     probability_point_before_seven,
     two_dice_sum_count,
     two_dice_sum_pmf,
+    uniform_odds_policy,
 )
 
 _ALL_TOTALS = list(range(MIN_TWO_DICE_SUM, MAX_TWO_DICE_SUM + 1))
@@ -237,3 +240,63 @@ def test_pass_odds_expected_value_rejects_non_points(bad: int) -> None:
 def test_dont_pass_lay_odds_expected_value_rejects_non_points(bad: int) -> None:
     with pytest.raises(ValueError, match="point must be one of"):
         dont_pass_lay_odds_expected_value(bad)
+
+
+def test_uniform_odds_policy_has_same_value_at_every_point() -> None:
+    policy = uniform_odds_policy(3)
+    for point in POINT_NUMBERS:
+        assert policy[point] == Fraction(3)
+
+
+def test_uniform_odds_policy_accepts_fraction() -> None:
+    policy = uniform_odds_policy(Fraction(5, 2))
+    for point in POINT_NUMBERS:
+        assert policy[point] == Fraction(5, 2)
+
+
+def test_odds_3_4_5x_values() -> None:
+    assert ODDS_3_4_5X[4] == Fraction(3)
+    assert ODDS_3_4_5X[10] == Fraction(3)
+    assert ODDS_3_4_5X[5] == Fraction(4)
+    assert ODDS_3_4_5X[9] == Fraction(4)
+    assert ODDS_3_4_5X[6] == Fraction(5)
+    assert ODDS_3_4_5X[8] == Fraction(5)
+
+
+def test_pass_line_plus_zero_odds_equals_pass_line_edge() -> None:
+    assert pass_line_plus_odds_edge(uniform_odds_policy(0)) == pass_line_house_edge()
+
+
+def test_pass_line_plus_1x_odds_is_exactly_7_over_825() -> None:
+    """E[odds] = 1 * 24/36 = 2/3, total = 5/3, edge = (7/495)/(5/3) = 7/825."""
+    assert pass_line_plus_odds_edge(uniform_odds_policy(1)) == Fraction(7, 825)
+
+
+def test_pass_line_plus_2x_odds_is_exactly_1_over_165() -> None:
+    """E[odds] = 2 * 24/36 = 4/3, total = 7/3, edge = (7/495)/(7/3) = 1/165."""
+    assert pass_line_plus_odds_edge(uniform_odds_policy(2)) == Fraction(1, 165)
+
+
+def test_pass_line_plus_3x_odds_is_exactly_7_over_1485() -> None:
+    """E[odds] = 3 * 24/36 = 2, total = 3, edge = (7/495)/3 = 7/1485."""
+    assert pass_line_plus_odds_edge(uniform_odds_policy(3)) == Fraction(7, 1485)
+
+
+def test_pass_line_plus_3_4_5x_odds_is_exactly_7_over_1870() -> None:
+    """E[odds] = 100/36 = 25/9 for 3-4-5x, total = 34/9, edge = 7/1870."""
+    assert pass_line_plus_odds_edge(ODDS_3_4_5X) == Fraction(7, 1870)
+
+
+def test_pass_line_plus_3_4_5x_odds_matches_canonical_percentage() -> None:
+    edge = float(pass_line_plus_odds_edge(ODDS_3_4_5X))
+    assert 0.00373 < edge < 0.00375  # canonical 0.374%
+
+
+def test_pass_line_composite_edge_decreases_monotonically_with_odds() -> None:
+    e0 = pass_line_plus_odds_edge(uniform_odds_policy(0))
+    e1 = pass_line_plus_odds_edge(uniform_odds_policy(1))
+    e2 = pass_line_plus_odds_edge(uniform_odds_policy(2))
+    e3 = pass_line_plus_odds_edge(uniform_odds_policy(3))
+    e5 = pass_line_plus_odds_edge(uniform_odds_policy(5))
+    e10 = pass_line_plus_odds_edge(uniform_odds_policy(10))
+    assert e0 > e1 > e2 > e3 > e5 > e10

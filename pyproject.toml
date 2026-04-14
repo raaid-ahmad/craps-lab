@@ -54,3 +54,33 @@ Repository = "https://github.com/raaid-ahmad/craps-lab"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/craps_lab"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",       # pydocstyle: docstrings added selectively, not mechanically enforced
+    "ANN",     # flake8-annotations: mypy --strict handles annotations more precisely
+    "COM812",  # trailing comma: conflicts with ruff formatter
+    "ISC001",  # implicit string concat: conflicts with ruff formatter
+    "CPY",     # flake8-copyright: repo LICENSE is the single source of truth
+    "FIX",     # flake8-fixme: TODO/FIXME allowed mid-development
+    "TD",      # flake8-todos: same
+    "FBT",     # boolean trap: addressed per call site, not mechanically
+    "PLR0913", # too many arguments: design review, not a mechanical cap
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",    # assert is the core of pytest
+    "PLR2004", # magic numbers are fine in test assertions
+    "INP001",  # tests/ is not an importable namespace
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+line-ending = "lf"

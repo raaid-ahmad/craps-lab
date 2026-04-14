@@ -10,6 +10,9 @@ from craps_lab.probability import (
     MAX_TWO_DICE_SUM,
     MIN_TWO_DICE_SUM,
     TWO_DICE_SAMPLE_SPACE_SIZE,
+    pass_line_house_edge,
+    pass_line_win_probability,
+    probability_point_before_seven,
     two_dice_sum_count,
     two_dice_sum_pmf,
 )
@@ -87,3 +90,52 @@ def test_pmf_matches_count_over_sample_space_size() -> None:
     for total in _ALL_TOTALS:
         expected = Fraction(two_dice_sum_count(total), TWO_DICE_SAMPLE_SPACE_SIZE)
         assert pmf[total] == expected
+
+
+@pytest.mark.parametrize(
+    ("point", "expected"),
+    [
+        (4, Fraction(3, 9)),
+        (5, Fraction(4, 10)),
+        (6, Fraction(5, 11)),
+        (8, Fraction(5, 11)),
+        (9, Fraction(4, 10)),
+        (10, Fraction(3, 9)),
+    ],
+)
+def test_probability_point_before_seven_per_point(
+    point: int,
+    expected: Fraction,
+) -> None:
+    assert probability_point_before_seven(point) == expected
+
+
+def test_probability_point_before_seven_is_symmetric_about_seven() -> None:
+    assert probability_point_before_seven(4) == probability_point_before_seven(10)
+    assert probability_point_before_seven(5) == probability_point_before_seven(9)
+    assert probability_point_before_seven(6) == probability_point_before_seven(8)
+
+
+@pytest.mark.parametrize("bad", [1, 7, 11, 12, 13, 0, -1])
+def test_probability_point_before_seven_rejects_non_points(bad: int) -> None:
+    with pytest.raises(ValueError, match="point must be one of"):
+        probability_point_before_seven(bad)
+
+
+def test_pass_line_win_probability_is_exactly_244_over_495() -> None:
+    assert pass_line_win_probability() == Fraction(244, 495)
+
+
+def test_pass_line_house_edge_is_exactly_7_over_495() -> None:
+    assert pass_line_house_edge() == Fraction(7, 495)
+
+
+def test_pass_line_house_edge_matches_canonical_percentage() -> None:
+    edge = float(pass_line_house_edge())
+    assert 0.01413 < edge < 0.01415  # canonical 1.414%
+
+
+def test_pass_line_win_and_lose_sum_to_one() -> None:
+    win = pass_line_win_probability()
+    lose = Fraction(1) - win
+    assert win + lose == Fraction(1)

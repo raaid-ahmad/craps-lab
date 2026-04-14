@@ -45,6 +45,12 @@ from __future__ import annotations
 from fractions import Fraction
 from typing import Final
 
+from craps_lab.bets import (
+    PASS_LINE_NATURAL_WINNERS,
+    POINT_NUMBERS,
+    SEVEN,
+)
+
 NUM_DICE: Final = 2
 MIN_FACE: Final = 1
 MAX_FACE: Final = 6
@@ -86,3 +92,70 @@ def two_dice_sum_pmf() -> dict[int, Fraction]:
         total: Fraction(two_dice_sum_count(total), TWO_DICE_SAMPLE_SPACE_SIZE)
         for total in range(MIN_TWO_DICE_SUM, MAX_TWO_DICE_SUM + 1)
     }
+
+
+def probability_point_before_seven(point: int) -> Fraction:
+    """Return P(roll ``point`` before rolling 7), given a fresh point-phase roll sequence.
+
+    Derivation: given an established point ``p``, every subsequent roll
+    either resolves the state (by hitting ``p`` or by hitting 7) or
+    leaves the state unchanged. Rolls that don't resolve are irrelevant
+    — they just restart the same geometric process, so they cancel out.
+    The conditional distribution over the two *resolving* outcomes is
+    ``count(p) : count(7)``, therefore
+
+        P(p before 7) = count(p) / (count(p) + count(7)).
+
+    For the six possible points this gives ``1/3`` for 4 and 10,
+    ``2/5`` for 5 and 9, and ``5/11`` for 6 and 8.
+    """
+    if point not in POINT_NUMBERS:
+        msg = f"point must be one of {POINT_NUMBERS}, got {point}"
+        raise ValueError(msg)
+    point_count = two_dice_sum_count(point)
+    seven_count = two_dice_sum_count(SEVEN)
+    return Fraction(point_count, point_count + seven_count)
+
+
+def pass_line_win_probability() -> Fraction:
+    """Return the closed-form P(pass line wins) under standard craps rules.
+
+    Pass line resolves in two phases:
+
+    1. **Come-out.** Naturals (7 or 11) win immediately, craps (2, 3,
+       or 12) lose immediately, and any other sum ``p`` establishes a
+       point.
+    2. **Point phase.** The shooter rolls until either ``p`` (win) or
+       7 (lose), with per-point probability given by
+       :py:func:`probability_point_before_seven`.
+
+    Combining both phases,
+
+        P(win) = sum_{s in {7, 11}} P(S = s)
+               + sum_{p in points} P(S = p) * P(p before 7).
+
+    All arithmetic stays in exact ``Fraction`` arithmetic, so the
+    result is the canonical ``244/495 ~ 0.4929`` rather than a rounded
+    float.
+    """
+    pmf = two_dice_sum_pmf()
+    come_out_win = sum(
+        (pmf[s] for s in PASS_LINE_NATURAL_WINNERS),
+        start=Fraction(0),
+    )
+    point_win = sum(
+        (pmf[p] * probability_point_before_seven(p) for p in POINT_NUMBERS),
+        start=Fraction(0),
+    )
+    return come_out_win + point_win
+
+
+def pass_line_house_edge() -> Fraction:
+    """Return the closed-form pass line house edge.
+
+    Pass line has no push outcomes, so the expected loss per unit bet
+    simplifies to ``P(lose) - P(win) = 1 - 2 * P(win)``. The canonical
+    value is ``7/495 ~ 0.01414``, i.e. 1.414%.
+    """
+    win = pass_line_win_probability()
+    return Fraction(1) - 2 * win

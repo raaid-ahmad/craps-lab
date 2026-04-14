@@ -16,7 +16,12 @@ running millions of rolls per simulation session.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 DIE_FACES: Final = frozenset(range(1, 7))
 """The six valid faces of a standard six-sided die."""
@@ -52,3 +57,33 @@ class DiceRoll:
     def is_doubles(self) -> bool:
         """True iff both dice show the same face (the "hardway" condition)."""
         return self.die1 == self.die2
+
+
+class DiceRoller:
+    """A seedable, deterministic two-dice roller.
+
+    Wraps a :py:class:`numpy.random.Generator` so that each call to
+    :py:meth:`roll` consumes one uniform ``(d1, d2)`` pair in
+    ``{1, ..., 6}`` and returns a :py:class:`DiceRoll`. Seeding the
+    roller makes every downstream simulation fully reproducible — the
+    whole session graph becomes a pure function of the seed.
+    """
+
+    def __init__(self, seed: int | None = None) -> None:
+        self._rng: np.random.Generator = np.random.default_rng(seed)
+
+    def roll(self) -> DiceRoll:
+        """Roll two six-sided dice and return a :py:class:`DiceRoll`."""
+        result = self._rng.integers(1, 6, size=2, endpoint=True)
+        return DiceRoll(die1=int(result[0]), die2=int(result[1]))
+
+    def rolls(self, count: int) -> Iterator[DiceRoll]:
+        """Yield ``count`` independent :py:class:`DiceRoll` instances.
+
+        ``count`` must be non-negative; zero yields an empty iterator.
+        """
+        if count < 0:
+            msg = f"count must be non-negative, got {count}"
+            raise ValueError(msg)
+        for _ in range(count):
+            yield self.roll()

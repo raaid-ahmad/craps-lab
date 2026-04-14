@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from craps_lab.dice import DIE_FACES, DiceRoll
+from craps_lab.dice import DIE_FACES, DiceRoll, DiceRoller
 
 
 def test_die_faces_is_one_through_six() -> None:
@@ -54,3 +54,42 @@ def test_invalid_die1_raises(die: int) -> None:
 def test_invalid_die2_raises(die: int) -> None:
     with pytest.raises(ValueError, match="die2"):
         DiceRoll(1, die)
+
+
+def test_roller_returns_valid_dice_rolls() -> None:
+    roller = DiceRoller(seed=42)
+    for _ in range(500):
+        roll = roller.roll()
+        assert roll.die1 in DIE_FACES
+        assert roll.die2 in DIE_FACES
+
+
+def test_roller_is_deterministic_under_seed() -> None:
+    a = DiceRoller(seed=0xC0DE)
+    b = DiceRoller(seed=0xC0DE)
+    for _ in range(100):
+        assert a.roll() == b.roll()
+
+
+def test_different_seeds_yield_different_streams() -> None:
+    a_roller = DiceRoller(seed=1)
+    b_roller = DiceRoller(seed=2)
+    a_stream = [a_roller.roll() for _ in range(30)]
+    b_stream = [b_roller.roll() for _ in range(30)]
+    assert a_stream != b_stream
+
+
+def test_rolls_generator_yields_requested_count() -> None:
+    roller = DiceRoller(seed=7)
+    assert len(list(roller.rolls(50))) == 50
+
+
+def test_rolls_zero_count_yields_empty() -> None:
+    roller = DiceRoller(seed=7)
+    assert list(roller.rolls(0)) == []
+
+
+def test_rolls_negative_count_raises() -> None:
+    roller = DiceRoller(seed=7)
+    with pytest.raises(ValueError, match="non-negative"):
+        list(roller.rolls(-1))

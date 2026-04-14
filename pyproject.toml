@@ -63,6 +63,7 @@ packages = ["src/craps_lab"]
 target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -101,6 +102,9 @@ enable_error_code = [
 pretty = true
 show_error_codes = true
 show_column_numbers = true
+exclude = [
+    "notebooks/",
+]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

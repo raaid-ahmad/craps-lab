@@ -6,6 +6,7 @@ from fractions import Fraction
 
 import pytest
 
+from craps_lab.bets import POINT_NUMBERS
 from craps_lab.probability import (
     MAX_TWO_DICE_SUM,
     MIN_TWO_DICE_SUM,
@@ -16,10 +17,12 @@ from craps_lab.probability import (
     dont_come_bet_push_probability,
     dont_come_bet_win_probability,
     dont_pass_house_edge,
+    dont_pass_lay_odds_expected_value,
     dont_pass_push_probability,
     dont_pass_win_probability,
     pass_line_house_edge,
     pass_line_win_probability,
+    pass_odds_expected_value,
     probability_point_before_seven,
     two_dice_sum_count,
     two_dice_sum_pmf,
@@ -212,3 +215,25 @@ def test_dont_come_bet_house_edge_equals_dont_pass() -> None:
 
 def test_dont_come_bet_house_edge_is_exactly_3_over_220() -> None:
     assert dont_come_bet_house_edge() == Fraction(3, 220)
+
+
+@pytest.mark.parametrize("point", list(POINT_NUMBERS))
+def test_pass_odds_expected_value_is_exactly_zero(point: int) -> None:
+    assert pass_odds_expected_value(point) == Fraction(0)
+
+
+@pytest.mark.parametrize("point", list(POINT_NUMBERS))
+def test_dont_pass_lay_odds_expected_value_is_exactly_zero(point: int) -> None:
+    assert dont_pass_lay_odds_expected_value(point) == Fraction(0)
+
+
+@pytest.mark.parametrize("bad", [1, 7, 11, 12, 13, 0])
+def test_pass_odds_expected_value_rejects_non_points(bad: int) -> None:
+    with pytest.raises(ValueError, match="point must be one of"):
+        pass_odds_expected_value(bad)
+
+
+@pytest.mark.parametrize("bad", [1, 7, 11, 12, 13, 0])
+def test_dont_pass_lay_odds_expected_value_rejects_non_points(bad: int) -> None:
+    with pytest.raises(ValueError, match="point must be one of"):
+        dont_pass_lay_odds_expected_value(bad)

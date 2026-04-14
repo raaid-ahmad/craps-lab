@@ -48,7 +48,9 @@ from typing import Final
 from craps_lab.bets import (
     DONT_PASS_BAR,
     DONT_PASS_COME_OUT_WINS,
+    DONT_PASS_LAY_PAYOUT_RATIO,
     PASS_LINE_NATURAL_WINNERS,
+    PASS_ODDS_PAYOUT_RATIO,
     POINT_NUMBERS,
     SEVEN,
 )
@@ -276,3 +278,57 @@ def dont_come_bet_house_edge() -> Fraction:
     i.e. 1.364%.
     """
     return dont_pass_house_edge()
+
+
+def pass_odds_expected_value(point: int) -> Fraction:
+    """Return ``E[P/L]`` per $1 pass-odds wager on the given point.
+
+    Pass-odds (also called "take odds") pay the true-odds ratio — the
+    payout that exactly compensates the per-point win probability —
+    so the expected value is zero by construction. Writing it out:
+
+        E[P/L] = P(p before 7) * payout(p) + (1 - P(p before 7)) * (-1)
+
+    With ``P(p before 7) = count(p) / (count(p) + 6)`` and
+    ``payout(p) = 6 / count(p)`` (from
+    :py:data:`PASS_ODDS_PAYOUT_RATIO`), the first term equals
+    ``6 / (count(p) + 6)`` and the second equals
+    ``-6 / (count(p) + 6)``. They cancel exactly, for every point.
+
+    This function computes the expected value symbolically using the
+    Fraction payout ratio so the zero is exact, not a rounded float.
+    """
+    if point not in POINT_NUMBERS:
+        msg = f"point must be one of {POINT_NUMBERS}, got {point}"
+        raise ValueError(msg)
+    p_win = probability_point_before_seven(point)
+    payout = PASS_ODDS_PAYOUT_RATIO[point]
+    return p_win * payout + (Fraction(1) - p_win) * Fraction(-1)
+
+
+def dont_pass_lay_odds_expected_value(point: int) -> Fraction:
+    """Return ``E[P/L]`` per $1 lay-odds wager on the given point.
+
+    Lay odds pay the inverse of pass-odds: ``count(p) / 6`` per $1
+    wagered if 7 comes before the point, and ``-$1`` if the point
+    comes first. The win and loss probabilities also swap compared
+    to pass odds, so the same cancellation gives zero expected
+    value:
+
+        E[P/L] = P(7 before p) * payout(p) + P(p before 7) * (-1)
+
+    With ``P(7 before p) = 6 / (count(p) + 6)`` and
+    ``payout(p) = count(p) / 6``, the first term equals
+    ``count(p) / (count(p) + 6)``, which cancels the second term
+    exactly.
+
+    Lay and take odds are mirror images of the same fair bet —
+    neither direction has any edge.
+    """
+    if point not in POINT_NUMBERS:
+        msg = f"point must be one of {POINT_NUMBERS}, got {point}"
+        raise ValueError(msg)
+    p_lose = probability_point_before_seven(point)
+    p_win = Fraction(1) - p_lose
+    payout = DONT_PASS_LAY_PAYOUT_RATIO[point]
+    return p_win * payout + p_lose * Fraction(-1)

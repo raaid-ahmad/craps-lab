@@ -84,3 +84,16 @@ ignore = [
 [tool.ruff.format]
 docstring-code-format = true
 line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+enable_error_code = [
+    "ignore-without-code",
+    "redundant-expr",
+    "truthy-bool",
+]
+pretty = true
+show_error_codes = true
+show_column_numbers = true

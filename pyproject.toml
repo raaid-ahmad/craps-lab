@@ -46,6 +46,10 @@ dev = [
     "ruff>=0.5",
     "pre-commit>=3.7",
 ]
+notebooks = [
+    "jupyter>=1.1",
+    "matplotlib>=3.9",
+]
 
 [project.urls]
 Homepage = "https://github.com/raaid-ahmad/craps-lab"

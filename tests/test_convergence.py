@@ -41,7 +41,12 @@ import pytest
 
 from craps_lab.bets import Outcome
 from craps_lab.dice import DiceRoller
-from craps_lab.play import play_dont_pass, play_pass_line
+from craps_lab.play import (
+    play_come_bet,
+    play_dont_come_bet,
+    play_dont_pass,
+    play_pass_line,
+)
 from craps_lab.probability import (
     MAX_TWO_DICE_SUM,
     MIN_TWO_DICE_SUM,
@@ -160,4 +165,37 @@ def test_line_bet_empirical_edge_matches_analytical(
         f"{label}: empirical={empirical:.6f}, analytical={analytical:.6f}, "
         f"deviation={abs(empirical - analytical):.6f} > "
         f"{_TOLERANCE_SIGMA} sigma ({tolerance:.6f})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Come bet equivalence: come bets should match line bets byte-for-byte
+# ---------------------------------------------------------------------------
+#
+# ``play_come_bet`` and ``play_dont_come_bet`` delegate to their line-bet
+# counterparts, so under the same seed their per-game outcome sequences
+# must be *identical* — which means the empirical house edge over n games
+# is also identical, not merely within a confidence band. Testing exact
+# equality (rather than a 5-sigma band like the line-bet convergence test)
+# catches any future delegation drift at the sample level.
+
+_EQUIVALENCE_N_GAMES: int = 10_000
+
+
+@pytest.mark.parametrize(
+    ("come_func", "line_func", "label"),
+    [
+        (play_come_bet, play_pass_line, "come_vs_pass_line"),
+        (play_dont_come_bet, play_dont_pass, "dont_come_vs_dont_pass"),
+    ],
+)
+def test_come_bet_empirical_edge_matches_line_bet_exactly(
+    come_func: Callable[[RollSource], Outcome],
+    line_func: Callable[[RollSource], Outcome],
+    label: str,
+) -> None:
+    come_empirical = _empirical_edge(_EQUIVALENCE_N_GAMES, _GAMES_SEED, come_func)
+    line_empirical = _empirical_edge(_EQUIVALENCE_N_GAMES, _GAMES_SEED, line_func)
+    assert come_empirical == line_empirical, (
+        f"{label}: come empirical {come_empirical}, line empirical {line_empirical}"
     )

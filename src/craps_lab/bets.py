@@ -21,7 +21,11 @@ its own rule values.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Final
+from fractions import Fraction
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 class Outcome(StrEnum):
@@ -43,6 +47,10 @@ class BetType(StrEnum):
     DONT_PASS = "dont_pass"  # noqa: S105 -- StrEnum value, not a password
     COME = "come"
     DONT_COME = "dont_come"
+    PASS_ODDS = "pass_odds"  # noqa: S105 -- StrEnum value, not a password
+    DONT_PASS_ODDS = "dont_pass_odds"  # noqa: S105 -- StrEnum value, not a password
+    COME_ODDS = "come_odds"
+    DONT_COME_ODDS = "dont_come_odds"
 
 
 SEVEN: Final = 7
@@ -84,4 +92,41 @@ Without this rule, don't pass would have a slight player edge; the
 bar-12 convention is what gives the house its ~1.36% edge, and every
 analytical derivation of the don't-pass edge references this constant
 explicitly rather than hard-coding 12.
+"""
+
+PASS_ODDS_PAYOUT_RATIO: Final[Mapping[int, Fraction]] = {
+    4: Fraction(2, 1),
+    5: Fraction(3, 2),
+    6: Fraction(6, 5),
+    8: Fraction(6, 5),
+    9: Fraction(3, 2),
+    10: Fraction(2, 1),
+}
+"""Payout ratio per $1 pass-odds wager, per point.
+
+Casinos pay "true odds" on pass-line odds bets — the ratio that
+exactly compensates the per-point win probability and therefore
+produces zero expected value. The values here match
+``count(7)/count(p)``: 6/3 = 2/1 for 4 and 10, 6/4 = 3/2 for 5 and
+9, and 6/5 for 6 and 8. Laying this ratio is what makes free odds
+the one bet on the table with no house edge at all.
+"""
+
+DONT_PASS_LAY_PAYOUT_RATIO: Final[Mapping[int, Fraction]] = {
+    4: Fraction(1, 2),
+    5: Fraction(2, 3),
+    6: Fraction(5, 6),
+    8: Fraction(5, 6),
+    9: Fraction(2, 3),
+    10: Fraction(1, 2),
+}
+"""Payout ratio per $1 don't-pass lay-odds wager, per point.
+
+Lay odds are the inverse of take odds: the player lays more than
+they stand to win, reflecting the fact that a don't-pass point
+bet is favored to win (the 7 outnumbers every point). The values
+here are the reciprocals of :py:data:`PASS_ODDS_PAYOUT_RATIO`, so
+a $2 lay on point 4 wins $1 and a $6 lay on point 6 wins $5. The
+expected value is exactly zero, identical to take-odds, because
+lay and take are two sides of the same fair wager.
 """

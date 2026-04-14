@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from fractions import Fraction
+
 from craps_lab.bets import (
     DONT_PASS_BAR,
     DONT_PASS_COME_OUT_LOSES,
     DONT_PASS_COME_OUT_WINS,
+    DONT_PASS_LAY_PAYOUT_RATIO,
     PASS_LINE_CRAPS_LOSERS,
     PASS_LINE_NATURAL_WINNERS,
+    PASS_ODDS_PAYOUT_RATIO,
     POINT_NUMBERS,
     SEVEN,
     BetType,
@@ -33,6 +37,37 @@ def test_bet_type_values() -> None:
     assert BetType.DONT_PASS.value == "dont_pass"
     assert BetType.COME.value == "come"
     assert BetType.DONT_COME.value == "dont_come"
+    assert BetType.PASS_ODDS.value == "pass_odds"
+    assert BetType.DONT_PASS_ODDS.value == "dont_pass_odds"
+    assert BetType.COME_ODDS.value == "come_odds"
+    assert BetType.DONT_COME_ODDS.value == "dont_come_odds"
+
+
+def test_pass_odds_payout_ratio_has_every_point() -> None:
+    assert set(PASS_ODDS_PAYOUT_RATIO.keys()) == set(POINT_NUMBERS)
+
+
+def test_pass_odds_payout_ratio_values() -> None:
+    # 4 and 10: 2:1 (3 winning combinations vs. 6 losing)
+    assert PASS_ODDS_PAYOUT_RATIO[4] == Fraction(2, 1)
+    assert PASS_ODDS_PAYOUT_RATIO[10] == Fraction(2, 1)
+    # 5 and 9: 3:2
+    assert PASS_ODDS_PAYOUT_RATIO[5] == Fraction(3, 2)
+    assert PASS_ODDS_PAYOUT_RATIO[9] == Fraction(3, 2)
+    # 6 and 8: 6:5
+    assert PASS_ODDS_PAYOUT_RATIO[6] == Fraction(6, 5)
+    assert PASS_ODDS_PAYOUT_RATIO[8] == Fraction(6, 5)
+
+
+def test_dont_pass_lay_payout_ratio_has_every_point() -> None:
+    assert set(DONT_PASS_LAY_PAYOUT_RATIO.keys()) == set(POINT_NUMBERS)
+
+
+def test_dont_pass_lay_payout_ratio_is_inverse_of_pass_odds() -> None:
+    for point in POINT_NUMBERS:
+        pass_payout = PASS_ODDS_PAYOUT_RATIO[point]
+        lay_payout = DONT_PASS_LAY_PAYOUT_RATIO[point]
+        assert lay_payout == Fraction(1) / pass_payout
 
 
 def test_seven_constant() -> None:

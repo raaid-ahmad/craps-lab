@@ -46,6 +46,8 @@ from fractions import Fraction
 from typing import Final
 
 from craps_lab.bets import (
+    DONT_PASS_BAR,
+    DONT_PASS_COME_OUT_WINS,
     PASS_LINE_NATURAL_WINNERS,
     POINT_NUMBERS,
     SEVEN,
@@ -159,3 +161,62 @@ def pass_line_house_edge() -> Fraction:
     """
     win = pass_line_win_probability()
     return Fraction(1) - 2 * win
+
+
+def dont_pass_win_probability() -> Fraction:
+    """Return the closed-form P(don't pass wins) under the bar-12 rule.
+
+    Don't pass resolves as:
+
+    * come-out 2 or 3: immediate win (``P = 3/36``).
+    * come-out 12: push under the bar-12 rule (``P = 1/36``); see
+      :py:func:`dont_pass_push_probability`.
+    * come-out 7 or 11: immediate loss (``P = 8/36``).
+    * come-out 4, 5, 6, 8, 9, or 10: point established. Don't pass
+      wins if 7 is rolled before the point, with per-point probability
+      ``1 - P(point before 7)``.
+
+    Combining the two phases,
+
+        P(win) = P(S in {2, 3})
+               + sum_{p in points} P(S = p) * (1 - P(p before 7)).
+
+    All in exact ``Fraction``; the canonical value is ``949/1980``.
+    """
+    pmf = two_dice_sum_pmf()
+    come_out_win = sum(
+        (pmf[s] for s in DONT_PASS_COME_OUT_WINS),
+        start=Fraction(0),
+    )
+    point_win = sum(
+        (pmf[p] * (Fraction(1) - probability_point_before_seven(p)) for p in POINT_NUMBERS),
+        start=Fraction(0),
+    )
+    return come_out_win + point_win
+
+
+def dont_pass_push_probability() -> Fraction:
+    """Return ``P(don't pass pushes)``, i.e. ``P(S = 12)`` on the come-out.
+
+    Under standard casino rules, the sum 12 is barred (pushes) on
+    don't pass. The value is just ``P(S = 12) = 1/36``.
+    """
+    return two_dice_sum_pmf()[DONT_PASS_BAR]
+
+
+def dont_pass_house_edge() -> Fraction:
+    """Return the closed-form don't pass house edge (bar 12).
+
+    ``E[P/L] = P(win) * 1 + P(push) * 0 + P(lose) * (-1)``. Under the
+    bar-12 rule, ``P(lose) = 1 - P(win) - P(push)``, so
+
+        edge = -E[P/L] = 1 - 2 * P(win) - P(push).
+
+    The canonical value is ``3/220 ~ 0.01364``, i.e. 1.364%. That is
+    slightly lower than the pass line's 1.414% because during the
+    point phase don't pass pays off against the 7 (count 6) rather
+    than against the specific point (count 3, 4, or 5).
+    """
+    win = dont_pass_win_probability()
+    push = dont_pass_push_probability()
+    return Fraction(1) - 2 * win - push

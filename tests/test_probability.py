@@ -10,6 +10,9 @@ from craps_lab.probability import (
     MAX_TWO_DICE_SUM,
     MIN_TWO_DICE_SUM,
     TWO_DICE_SAMPLE_SPACE_SIZE,
+    dont_pass_house_edge,
+    dont_pass_push_probability,
+    dont_pass_win_probability,
     pass_line_house_edge,
     pass_line_win_probability,
     probability_point_before_seven,
@@ -139,3 +142,40 @@ def test_pass_line_win_and_lose_sum_to_one() -> None:
     win = pass_line_win_probability()
     lose = Fraction(1) - win
     assert win + lose == Fraction(1)
+
+
+def test_dont_pass_win_probability_is_exactly_949_over_1980() -> None:
+    assert dont_pass_win_probability() == Fraction(949, 1980)
+
+
+def test_dont_pass_push_probability_is_exactly_one_thirty_sixth() -> None:
+    assert dont_pass_push_probability() == Fraction(1, 36)
+
+
+def test_dont_pass_house_edge_is_exactly_3_over_220() -> None:
+    assert dont_pass_house_edge() == Fraction(3, 220)
+
+
+def test_dont_pass_house_edge_matches_canonical_percentage() -> None:
+    edge = float(dont_pass_house_edge())
+    assert 0.01363 < edge < 0.01365  # canonical 1.364%
+
+
+def test_dont_pass_win_plus_push_plus_lose_equals_one() -> None:
+    win = dont_pass_win_probability()
+    push = dont_pass_push_probability()
+    lose = Fraction(1) - win - push
+    assert win + push + lose == Fraction(1)
+
+
+def test_pass_win_plus_dont_win_plus_dont_push_equals_one() -> None:
+    # Cross-check: pass line wins iff don't pass loses (not pushes),
+    # so P(pass win) + P(dont win) + P(dont push) must equal 1.
+    pass_win = pass_line_win_probability()
+    dont_win = dont_pass_win_probability()
+    dont_push = dont_pass_push_probability()
+    assert pass_win + dont_win + dont_push == Fraction(1)
+
+
+def test_dont_pass_edge_is_lower_than_pass_line_edge() -> None:
+    assert dont_pass_house_edge() < pass_line_house_edge()

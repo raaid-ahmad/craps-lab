@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "craps-lab"
+version = "0.0.0"
+description = "A probability-first craps simulator: closed-form house edges, Monte Carlo convergence, and shooter-length Markov chains."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Raaid Ahmad" },
+]
+keywords = [
+    "craps",
+    "probability",
+    "statistics",
+    "monte-carlo",
+    "simulation",
+    "gambling",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "hypothesis>=6.100",
+    "mypy>=1.10",
+    "ruff>=0.5",
+    "pre-commit>=3.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/raaid-ahmad/craps-lab"
+Issues = "https://github.com/raaid-ahmad/craps-lab/issues"
+Repository = "https://github.com/raaid-ahmad/craps-lab"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/craps_lab"]

@@ -10,6 +10,11 @@ from craps_lab.probability import (
     MAX_TWO_DICE_SUM,
     MIN_TWO_DICE_SUM,
     TWO_DICE_SAMPLE_SPACE_SIZE,
+    come_bet_house_edge,
+    come_bet_win_probability,
+    dont_come_bet_house_edge,
+    dont_come_bet_push_probability,
+    dont_come_bet_win_probability,
     dont_pass_house_edge,
     dont_pass_push_probability,
     dont_pass_win_probability,
@@ -179,3 +184,31 @@ def test_pass_win_plus_dont_win_plus_dont_push_equals_one() -> None:
 
 def test_dont_pass_edge_is_lower_than_pass_line_edge() -> None:
     assert dont_pass_house_edge() < pass_line_house_edge()
+
+
+def test_come_bet_win_probability_equals_pass_line() -> None:
+    assert come_bet_win_probability() == pass_line_win_probability()
+
+
+def test_come_bet_house_edge_equals_pass_line() -> None:
+    assert come_bet_house_edge() == pass_line_house_edge()
+
+
+def test_come_bet_house_edge_is_exactly_7_over_495() -> None:
+    assert come_bet_house_edge() == Fraction(7, 495)
+
+
+def test_dont_come_bet_win_probability_equals_dont_pass() -> None:
+    assert dont_come_bet_win_probability() == dont_pass_win_probability()
+
+
+def test_dont_come_bet_push_equals_dont_pass_push() -> None:
+    assert dont_come_bet_push_probability() == dont_pass_push_probability()
+
+
+def test_dont_come_bet_house_edge_equals_dont_pass() -> None:
+    assert dont_come_bet_house_edge() == dont_pass_house_edge()
+
+
+def test_dont_come_bet_house_edge_is_exactly_3_over_220() -> None:
+    assert dont_come_bet_house_edge() == Fraction(3, 220)

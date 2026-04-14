@@ -220,3 +220,59 @@ def dont_pass_house_edge() -> Fraction:
     win = dont_pass_win_probability()
     push = dont_pass_push_probability()
     return Fraction(1) - 2 * win - push
+
+
+def come_bet_win_probability() -> Fraction:
+    """Return ``P(come bet wins)``.
+
+    A come bet is placed during the point phase; the *next* roll
+    plays the same role as a pass line come-out (7 or 11 win, 2, 3,
+    or 12 lose, 4-10 establish the *come point*), and subsequent
+    rolls resolve that come point vs. 7 via the same geometric
+    process as pass line's.
+
+    The dice have no memory. Whatever table state exists at the
+    moment a come bet is placed is irrelevant to its resolution, so
+    the game tree *from the bet's point of view* is identical to
+    pass line's, and the win probability is exactly ``244/495``.
+    This function delegates to :py:func:`pass_line_win_probability`
+    to make the equivalence explicit in code as well as in math.
+    """
+    return pass_line_win_probability()
+
+
+def come_bet_house_edge() -> Fraction:
+    """Return the come bet house edge.
+
+    Equal to :py:func:`pass_line_house_edge` by the no-memory
+    argument above: ``7/495 ~ 0.01414``, i.e. 1.414%.
+    """
+    return pass_line_house_edge()
+
+
+def dont_come_bet_win_probability() -> Fraction:
+    """Return ``P(don't come bet wins)``.
+
+    Same no-memory argument as :py:func:`come_bet_win_probability`:
+    a don't-come bet's next roll plays the role of a don't-pass
+    come-out, with the same bar-12 rule. Win probability is
+    ``949/1980``, identical to don't pass.
+    """
+    return dont_pass_win_probability()
+
+
+def dont_come_bet_push_probability() -> Fraction:
+    """Return ``P(don't come bet pushes)``.
+
+    Equal to :py:func:`dont_pass_push_probability`: ``1/36``.
+    """
+    return dont_pass_push_probability()
+
+
+def dont_come_bet_house_edge() -> Fraction:
+    """Return the don't come bet house edge.
+
+    Equal to :py:func:`dont_pass_house_edge`: ``3/220 ~ 0.01364``,
+    i.e. 1.364%.
+    """
+    return dont_pass_house_edge()

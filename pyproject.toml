@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "craps-lab"
 version = "0.0.0"
-description = "A probability-first craps simulator: closed-form house edges, Monte Carlo convergence, and shooter-length Markov chains."
+description = "Define, simulate, and compare craps betting strategies under realistic session conditions — on a probability-first engine."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
@@ -14,10 +14,11 @@ authors = [
 ]
 keywords = [
     "craps",
+    "strategy",
+    "simulation",
+    "monte-carlo",
     "probability",
     "statistics",
-    "monte-carlo",
-    "simulation",
     "gambling",
 ]
 classifiers = [

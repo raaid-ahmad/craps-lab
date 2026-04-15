@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from fractions import Fraction
+
 import pytest
 
 from craps_lab.dice import DIE_FACES, DiceRoll, DiceRoller
@@ -54,6 +56,24 @@ def test_invalid_die1_raises(die: int) -> None:
 def test_invalid_die2_raises(die: int) -> None:
     with pytest.raises(ValueError, match="die2"):
         DiceRoll(1, die)
+
+
+# ``bool`` subclasses ``int`` in Python and ``True == 1``; without an
+# exact-type check ``DiceRoll(True, 6)`` would slip through value
+# validation and produce nonsense totals downstream. Same story for
+# ``Fraction(1, 1)`` and ``1.0``, both of which compare equal to 1 and
+# hash to the same bucket. These tests pin the rejection at the
+# boundary where it belongs.
+@pytest.mark.parametrize("bad", [True, False, Fraction(1, 1), 1.0])
+def test_dice_roll_rejects_non_int_die1(bad: object) -> None:
+    with pytest.raises(TypeError, match="die1 must be an int"):
+        DiceRoll(bad, 1)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad", [True, False, Fraction(1, 1), 1.0])
+def test_dice_roll_rejects_non_int_die2(bad: object) -> None:
+    with pytest.raises(TypeError, match="die2 must be an int"):
+        DiceRoll(1, bad)  # type: ignore[arg-type]
 
 
 def test_roller_returns_valid_dice_rolls() -> None:

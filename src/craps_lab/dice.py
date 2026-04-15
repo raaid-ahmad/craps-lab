@@ -41,6 +41,20 @@ class DiceRoll:
     die2: int
 
     def __post_init__(self) -> None:
+        # ``type(x) is int`` rather than ``isinstance(x, int)``: booleans
+        # subclass int in Python (``True == 1``, ``False == 0``), so
+        # ``isinstance(True, int)`` is True and ``True in DIE_FACES``
+        # silently succeeds. For a project whose whole pitch is rigor,
+        # ``DiceRoll(True, 6)`` slipping through would be embarrassing
+        # — and ``Fraction(1, 1)`` or ``1.0`` equally so, since both
+        # hash and compare equal to 1. Exact-type checks are the right
+        # call at this boundary.
+        if type(self.die1) is not int:
+            msg = f"die1 must be an int, got {type(self.die1).__name__}"
+            raise TypeError(msg)
+        if type(self.die2) is not int:
+            msg = f"die2 must be an int, got {type(self.die2).__name__}"
+            raise TypeError(msg)
         if self.die1 not in DIE_FACES:
             msg = f"die1 must be in 1..6, got {self.die1}"
             raise ValueError(msg)

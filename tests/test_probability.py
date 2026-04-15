@@ -206,6 +206,27 @@ def test_come_bet_house_edge_is_exactly_7_over_495() -> None:
     assert come_bet_house_edge() == Fraction(7, 495)
 
 
+def test_come_bet_win_probability_derived_from_pmf() -> None:
+    # Rebuild P(come bet wins) directly from the PMF and the per-point
+    # geometric process, without calling pass_line_win_probability.
+    # The equivalence to pass line then falls out as a derived fact
+    # rather than the delegation it is in the implementation — this is
+    # what makes the "dice have no memory" argument executable.
+    pmf = two_dice_sum_pmf()
+    count_seven = two_dice_sum_count(7)
+    naturals = pmf[7] + pmf[11]
+    come_point_wins = sum(
+        (
+            pmf[p] * Fraction(two_dice_sum_count(p), two_dice_sum_count(p) + count_seven)
+            for p in POINT_NUMBERS
+        ),
+        start=Fraction(0),
+    )
+    derived = naturals + come_point_wins
+    assert derived == Fraction(244, 495)
+    assert come_bet_win_probability() == derived
+
+
 def test_dont_come_bet_win_probability_equals_dont_pass() -> None:
     assert dont_come_bet_win_probability() == dont_pass_win_probability()
 
@@ -220,6 +241,27 @@ def test_dont_come_bet_house_edge_equals_dont_pass() -> None:
 
 def test_dont_come_bet_house_edge_is_exactly_3_over_220() -> None:
     assert dont_come_bet_house_edge() == Fraction(3, 220)
+
+
+def test_dont_come_bet_win_probability_derived_from_pmf() -> None:
+    # Same no-memory check on the don't-come side, independently of
+    # dont_pass_win_probability. The bar-12 rule applies: 2 and 3 win,
+    # 12 pushes, 7 and 11 lose on the come-out; point 4-10 resolves by
+    # the same geometric process and the don't-come wins if the seven
+    # beats the point.
+    pmf = two_dice_sum_pmf()
+    count_seven = two_dice_sum_count(7)
+    come_out_wins = pmf[2] + pmf[3]
+    point_wins = sum(
+        (
+            pmf[p] * Fraction(count_seven, two_dice_sum_count(p) + count_seven)
+            for p in POINT_NUMBERS
+        ),
+        start=Fraction(0),
+    )
+    derived = come_out_wins + point_wins
+    assert derived == Fraction(949, 1980)
+    assert dont_come_bet_win_probability() == derived
 
 
 @pytest.mark.parametrize("point", list(POINT_NUMBERS))

@@ -121,3 +121,70 @@ def test_play_dont_come_bet_equivalent_to_play_dont_pass_under_same_seed() -> No
     line_roller = DiceRoller(seed=0xDEAD)
     for _ in range(500):
         assert play_dont_come_bet(come_roller) == play_dont_pass(line_roller)
+
+
+# Branch coverage for play_come_bet / play_dont_come_bet on their own,
+# not as a consequence of delegation. Exercising each branch through
+# the come-bet function directly is what makes the "pass-line-style
+# rules from the next roll" contract executable as a test rather than
+# only as a docstring claim.
+
+
+@pytest.mark.parametrize(("d1", "d2"), [(3, 4), (6, 5)])  # 7, 11
+def test_play_come_bet_next_roll_naturals_win(d1: int, d2: int) -> None:
+    roller = _ScriptedRoller([(d1, d2)])
+    assert play_come_bet(roller) == Outcome.WIN
+
+
+@pytest.mark.parametrize(("d1", "d2"), [(1, 1), (1, 2), (6, 6)])  # 2, 3, 12
+def test_play_come_bet_next_roll_craps_lose(d1: int, d2: int) -> None:
+    roller = _ScriptedRoller([(d1, d2)])
+    assert play_come_bet(roller) == Outcome.LOSE
+
+
+def test_play_come_bet_come_point_then_point_wins() -> None:
+    # Come point 5 established on the next roll, then 5 again → win.
+    roller = _ScriptedRoller([(2, 3), (4, 1)])
+    assert play_come_bet(roller) == Outcome.WIN
+
+
+def test_play_come_bet_come_point_then_seven_loses() -> None:
+    # Come point 8 established, then seven-out → lose.
+    roller = _ScriptedRoller([(2, 6), (4, 3)])
+    assert play_come_bet(roller) == Outcome.LOSE
+
+
+def test_play_come_bet_intermediate_rolls_are_ignored() -> None:
+    # Come point 9, non-resolving 4 and 10, then 9 → win.
+    roller = _ScriptedRoller([(4, 5), (1, 3), (4, 6), (3, 6)])
+    assert play_come_bet(roller) == Outcome.WIN
+
+
+@pytest.mark.parametrize(("d1", "d2"), [(1, 1), (1, 2)])  # 2, 3
+def test_play_dont_come_bet_next_roll_wins(d1: int, d2: int) -> None:
+    roller = _ScriptedRoller([(d1, d2)])
+    assert play_dont_come_bet(roller) == Outcome.WIN
+
+
+@pytest.mark.parametrize(("d1", "d2"), [(3, 4), (6, 5)])  # 7, 11
+def test_play_dont_come_bet_next_roll_loses(d1: int, d2: int) -> None:
+    roller = _ScriptedRoller([(d1, d2)])
+    assert play_dont_come_bet(roller) == Outcome.LOSE
+
+
+def test_play_dont_come_bet_next_roll_twelve_pushes() -> None:
+    # Bar 12: a come-out 12 on the next roll pushes rather than losing.
+    roller = _ScriptedRoller([(6, 6)])
+    assert play_dont_come_bet(roller) == Outcome.PUSH
+
+
+def test_play_dont_come_bet_come_point_then_seven_wins() -> None:
+    # Come point 6 established, then seven-out → don't-come wins.
+    roller = _ScriptedRoller([(3, 3), (2, 5)])
+    assert play_dont_come_bet(roller) == Outcome.WIN
+
+
+def test_play_dont_come_bet_come_point_then_point_loses() -> None:
+    # Come point 10 established, then 10 again → don't-come loses.
+    roller = _ScriptedRoller([(4, 6), (5, 5)])
+    assert play_dont_come_bet(roller) == Outcome.LOSE

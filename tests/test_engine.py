@@ -773,15 +773,49 @@ class TestPassOddsResolution:
         by_kind = {res.kind: res for res in result.resolutions}
         assert by_kind[BetType.PASS_ODDS].payout == -10
 
-    def test_pass_odds_truncates_fractional_payouts(self) -> None:
-        """A $7 pass-odds on point 6 (6:5) would pay $8.4; the casino pays $8."""
-        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 2)]))
+    @pytest.mark.parametrize(
+        ("point", "come_out_dice", "bad_amount", "denom"),
+        [
+            # Pass-odds ratios: 2:1 on 4/10, 3:2 on 5/9, 6:5 on 6/8.
+            (5, DiceRoll(2, 3), 5, 2),  # 5 % 2 != 0
+            (6, DiceRoll(3, 3), 7, 5),  # 7 % 5 != 0 (the old truncate example)
+            (8, DiceRoll(4, 4), 11, 5),
+            (9, DiceRoll(4, 5), 3, 2),
+        ],
+    )
+    def test_pass_odds_rejects_amounts_that_would_truncate(
+        self,
+        point: int,
+        come_out_dice: DiceRoll,
+        bad_amount: int,
+        denom: int,
+    ) -> None:
+        table = Table(roller=ScriptedRoller([come_out_dice]))
         table.place_bet(BetType.PASS_LINE, 5)
         table.roll()
-        table.place_bet(BetType.PASS_ODDS, 7)
-        result = table.roll()
-        odds_res = next(r for r in result.resolutions if r.kind is BetType.PASS_ODDS)
-        assert odds_res.payout == 8  # (7 * 6) // 5
+        assert table.point == point
+        with pytest.raises(ValueError, match=f"multiple of {denom}"):
+            table.place_bet(BetType.PASS_ODDS, bad_amount)
+
+    @pytest.mark.parametrize(
+        ("point", "come_out_dice", "any_integer_amount"),
+        [
+            (4, DiceRoll(2, 2), 7),  # 2:1 — denom 1 — any amount pays a whole win
+            (10, DiceRoll(5, 5), 13),
+        ],
+    )
+    def test_pass_odds_accepts_any_amount_on_2_to_1_points(
+        self,
+        point: int,
+        come_out_dice: DiceRoll,
+        any_integer_amount: int,
+    ) -> None:
+        table = Table(roller=ScriptedRoller([come_out_dice]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        assert table.point == point
+        odds_id = table.place_bet(BetType.PASS_ODDS, any_integer_amount)
+        assert odds_id > 0
 
 
 class TestLayOddsResolution:
@@ -825,6 +859,32 @@ class TestLayOddsResolution:
         result = table.roll()
         by_kind = {res.kind: res for res in result.resolutions}
         assert by_kind[BetType.DONT_PASS_ODDS].payout == -30
+
+    @pytest.mark.parametrize(
+        ("point", "come_out_dice", "bad_amount", "denom"),
+        [
+            # Lay ratios: 1:2 on 4/10, 2:3 on 5/9, 5:6 on 6/8.
+            (4, DiceRoll(2, 2), 5, 2),
+            (10, DiceRoll(5, 5), 7, 2),
+            (5, DiceRoll(2, 3), 5, 3),
+            (9, DiceRoll(4, 5), 7, 3),
+            (6, DiceRoll(3, 3), 7, 6),
+            (8, DiceRoll(4, 4), 11, 6),
+        ],
+    )
+    def test_lay_odds_rejects_amounts_that_would_truncate(
+        self,
+        point: int,
+        come_out_dice: DiceRoll,
+        bad_amount: int,
+        denom: int,
+    ) -> None:
+        table = Table(roller=ScriptedRoller([come_out_dice]))
+        table.place_bet(BetType.DONT_PASS, 5)
+        table.roll()
+        assert table.point == point
+        with pytest.raises(ValueError, match=f"multiple of {denom}"):
+            table.place_bet(BetType.DONT_PASS_ODDS, bad_amount)
 
 
 class TestComeOddsResolution:

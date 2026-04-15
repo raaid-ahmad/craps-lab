@@ -77,6 +77,38 @@ def _reject_non_positive_field(value: int, name: str) -> None:
         raise ValueError(msg)
 
 
+def _validate_odds_amount(kind: BetType, amount: int, point: int) -> None:
+    """Reject odds wagers that would not pay a whole-dollar win.
+
+    Casinos only accept odds bets in amounts that pay out an integer
+    number of chips at the true-odds ratio: an amount on a $5 pass-
+    line must be a multiple of 5 behind point 6/8 (6:5), a multiple
+    of 2 behind point 5/9 (3:2), and any amount behind point 4/10
+    (2:1). Lay odds use the inverse ratios (a multiple of 6 behind
+    point 6/8, etc.). An amount that does not satisfy this rule
+    would either silently truncate the player's winnings or force a
+    fractional chip — both are casino-floor impossibilities and
+    both corrupt the engine's zero-EV guarantee for free odds.
+
+    Raising here rather than rounding means :py:func:`_step_take_odds`
+    and :py:func:`_step_lay_odds` can rely on integer division being
+    exact.
+    """
+    if kind in _TAKE_ODDS_FAMILY:
+        ratio = PASS_ODDS_PAYOUT_RATIO[point]
+    elif kind in _LAY_ODDS_FAMILY:
+        ratio = DONT_PASS_LAY_PAYOUT_RATIO[point]
+    else:
+        return
+    denom = ratio.denominator
+    if amount % denom != 0:
+        msg = (
+            f"{kind} on point {point} must be a multiple of {denom} "
+            f"(payout ratio {ratio.numerator}:{ratio.denominator}); got {amount}"
+        )
+        raise ValueError(msg)
+
+
 @dataclass(frozen=True, slots=True)
 class ActiveBet:
     """A single bet currently on the table.
@@ -240,6 +272,8 @@ class Table:
         self._validate_placement(kind, linked_bet_id)
         bet_point = self._resolve_bet_point(kind, linked_bet_id)
         parent_bet_id = self._resolve_parent_bet_id(kind, linked_bet_id)
+        if bet_point is not None and kind in _TAKE_ODDS_FAMILY | _LAY_ODDS_FAMILY:
+            _validate_odds_amount(kind, amount, bet_point)
         bet = ActiveBet(
             bet_id=self._next_bet_id,
             kind=kind,
@@ -513,7 +547,9 @@ def _step_take_odds(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
         return _resolve(bet, Outcome.LOSE, -bet.amount)
     if total == bet.point:
         ratio = PASS_ODDS_PAYOUT_RATIO[bet.point]
-        # Integer-truncated: the casino never pays a fractional chip.
+        # Exact integer arithmetic: `_validate_odds_amount` rejects any
+        # wager that is not a multiple of `ratio.denominator`, so this
+        # division has no truncation.
         payout = (bet.amount * ratio.numerator) // ratio.denominator
         return _resolve(bet, Outcome.WIN, payout)
     return bet
@@ -525,6 +561,7 @@ def _step_lay_odds(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
         raise RuntimeError(msg)
     if total == SEVEN:
         ratio = DONT_PASS_LAY_PAYOUT_RATIO[bet.point]
+        # Exact integer arithmetic — see :py:func:`_step_take_odds`.
         payout = (bet.amount * ratio.numerator) // ratio.denominator
         return _resolve(bet, Outcome.WIN, payout)
     if total == bet.point:

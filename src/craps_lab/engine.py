@@ -19,21 +19,29 @@ The module exposes four types:
   before and after, and every bet that changed state on this roll.
 * :py:class:`Table` — the state machine itself.
 
-This commit establishes the surface. Per-bet-kind resolution (pass
-line + pass odds, then come / don't-pass / don't-come and their
-odds) lands in subsequent commits.
+This commit implements pass line + pass odds. Come, don't pass,
+don't come, and their odds siblings land in the next commit.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from craps_lab.bets import POINT_NUMBERS, BetType, Outcome
+from craps_lab.bets import (
+    PASS_LINE_CRAPS_LOSERS,
+    PASS_LINE_NATURAL_WINNERS,
+    PASS_ODDS_PAYOUT_RATIO,
+    POINT_NUMBERS,
+    SEVEN,
+    BetType,
+    Outcome,
+)
 from craps_lab.dice import DiceRoller
 
 if TYPE_CHECKING:
     from craps_lab.dice import DiceRoll
+    from craps_lab.play import RollSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +125,7 @@ class RollResolution:
     Carries the raw :py:class:`DiceRoll`, the table's point before
     and after this roll (so strategies can react to point-set and
     seven-out transitions without having to diff ``table.point``
-    themselves), and the list of bets whose state changed.
+    themselves), and the list of bets whose state resolved.
     """
 
     roll: DiceRoll
@@ -129,19 +137,29 @@ class RollResolution:
 class Table:
     """Craps table state machine.
 
-    Owns a seeded :py:class:`DiceRoller`, a point-on / point-off
-    flag, and a list of :py:class:`ActiveBet` records. Each call
-    to :py:meth:`roll` advances the dice, resolves every active
-    bet against the roll, updates the point state, and returns a
-    :py:class:`RollResolution` summarising the transition.
+    Owns a dice source, a point-on / point-off flag, and a list of
+    :py:class:`ActiveBet` records. Each call to :py:meth:`roll`
+    advances the dice, resolves every active bet against the roll,
+    updates the point state, and returns a :py:class:`RollResolution`
+    summarising the transition.
 
-    Scaffolding: :py:meth:`roll` advances the dice and returns an
-    empty resolution list. Per-bet-kind resolution lands in the
-    following commits.
+    The dice source is either a seeded :py:class:`DiceRoller` built
+    internally from ``seed``, or any object satisfying the
+    :py:class:`craps_lab.play.RollSource` protocol — tests pass in a
+    scripted sequence to deterministically drive every branch of
+    the resolution logic.
     """
 
-    def __init__(self, *, seed: int | None = None) -> None:
-        self._roller: DiceRoller = DiceRoller(seed=seed)
+    def __init__(
+        self,
+        *,
+        seed: int | None = None,
+        roller: RollSource | None = None,
+    ) -> None:
+        if roller is not None and seed is not None:
+            msg = "pass either seed or roller, not both"
+            raise ValueError(msg)
+        self._roller: RollSource = roller if roller is not None else DiceRoller(seed=seed)
         self._point: int | None = None
         self._bets: list[ActiveBet] = []
         self._next_bet_id: int = 1
@@ -156,19 +174,161 @@ class Table:
         """An immutable snapshot of bets currently on the table."""
         return tuple(self._bets)
 
-    def roll(self) -> RollResolution:
-        """Roll the dice once and resolve any active bets.
+    def place_bet(self, kind: BetType, amount: int) -> int:
+        """Place a bet of the given kind and amount; return its ``bet_id``.
 
-        Scaffolding: advances the dice and returns a
-        :py:class:`RollResolution` with an empty
-        :py:attr:`~RollResolution.resolutions` tuple. Resolution
-        logic lands in the next commit.
+        Phase validation is enforced here: pass line may only be
+        placed during the come-out phase; pass odds only during the
+        point phase, and only when the matching pass-line bet is
+        already on the table. Other bet kinds raise
+        :py:exc:`NotImplementedError` until the following commits
+        add them.
+        """
+        self._validate_placement(kind)
+        bet_point = self._bet_point_for(kind)
+        bet = ActiveBet(
+            bet_id=self._next_bet_id,
+            kind=kind,
+            amount=amount,
+            point=bet_point,
+        )
+        self._next_bet_id += 1
+        self._bets.append(bet)
+        return bet.bet_id
+
+    def roll(self) -> RollResolution:
+        """Roll the dice once and resolve every active bet against it.
+
+        Returns a :py:class:`RollResolution` describing the dice,
+        the point state before and after the roll, and every bet
+        whose state settled. Bets that did not resolve (non-
+        resolving rolls in the point phase, or come bets awaiting
+        their own come-out) stay on the table and do not appear in
+        the resolution list — except for pass-line bets that
+        *travelled* to their own point on a come-out roll, which
+        also stay on the table without a resolution entry.
         """
         dice = self._roller.roll()
+        total = dice.total
         point_before = self._point
+
+        resolutions: list[BetResolution] = []
+        carried_over: list[ActiveBet] = []
+        for bet in self._bets:
+            step = _step_bet(bet, total, point_before)
+            if isinstance(step, BetResolution):
+                resolutions.append(step)
+            else:
+                carried_over.append(step)
+
+        self._bets = carried_over
+        self._point = _next_point(total, point_before)
+
         return RollResolution(
             roll=dice,
             point_before=point_before,
             point_after=self._point,
-            resolutions=(),
+            resolutions=tuple(resolutions),
         )
+
+    def _validate_placement(self, kind: BetType) -> None:
+        if kind is BetType.PASS_LINE:
+            if self._point is not None:
+                msg = "pass line can only be placed during the come-out phase"
+                raise ValueError(msg)
+            return
+        if kind is BetType.PASS_ODDS:
+            if self._point is None:
+                msg = "pass odds can only be placed once a point is established"
+                raise ValueError(msg)
+            if self._find_pass_line_bet() is None:
+                msg = "pass odds requires an existing pass line bet"
+                raise ValueError(msg)
+            return
+        msg = f"engine does not yet support placing bet of kind {kind}"
+        raise NotImplementedError(msg)
+
+    def _bet_point_for(self, kind: BetType) -> int | None:
+        # Pass-odds inherits the table's current point at placement time.
+        # Pass-line starts without a point; it acquires one when the
+        # come-out roll lands on a point number.
+        if kind is BetType.PASS_ODDS:
+            return self._point
+        return None
+
+    def _find_pass_line_bet(self) -> ActiveBet | None:
+        for bet in self._bets:
+            if bet.kind is BetType.PASS_LINE:
+                return bet
+        return None
+
+
+def _step_bet(
+    bet: ActiveBet,
+    total: int,
+    point_before: int | None,
+) -> BetResolution | ActiveBet:
+    if bet.kind is BetType.PASS_LINE:
+        return _step_pass_line(bet, total, point_before)
+    if bet.kind is BetType.PASS_ODDS:
+        return _step_pass_odds(bet, total, point_before)
+    msg = f"engine cannot yet resolve bet kind {bet.kind}"
+    raise NotImplementedError(msg)
+
+
+def _step_pass_line(
+    bet: ActiveBet,
+    total: int,
+    point_before: int | None,
+) -> BetResolution | ActiveBet:
+    if point_before is None:
+        # Come-out phase: 7/11 win, 2/3/12 lose, 4-10 travel to their own point.
+        if total in PASS_LINE_NATURAL_WINNERS:
+            return _resolve(bet, Outcome.WIN, bet.amount)
+        if total in PASS_LINE_CRAPS_LOSERS:
+            return _resolve(bet, Outcome.LOSE, -bet.amount)
+        return replace(bet, point=total)
+    # Point phase: resolved by 7 or by the bet's own point being rolled.
+    if total == SEVEN:
+        return _resolve(bet, Outcome.LOSE, -bet.amount)
+    if total == bet.point:
+        return _resolve(bet, Outcome.WIN, bet.amount)
+    return bet
+
+
+def _step_pass_odds(
+    bet: ActiveBet,
+    total: int,
+    point_before: int | None,
+) -> BetResolution | ActiveBet:
+    if point_before is None:
+        msg = f"pass odds bet {bet.bet_id} resolving during come-out; engine invariant violated"
+        raise RuntimeError(msg)
+    if total == SEVEN:
+        return _resolve(bet, Outcome.LOSE, -bet.amount)
+    if total == point_before:
+        # True-odds payout: integer-truncated so the engine never pays the
+        # player a fractional chip the casino would not pay at a real table.
+        payout = (bet.amount * PASS_ODDS_PAYOUT_RATIO[point_before].numerator) // (
+            PASS_ODDS_PAYOUT_RATIO[point_before].denominator
+        )
+        return _resolve(bet, Outcome.WIN, payout)
+    return bet
+
+
+def _resolve(bet: ActiveBet, outcome: Outcome, payout: int) -> BetResolution:
+    return BetResolution(
+        bet_id=bet.bet_id,
+        kind=bet.kind,
+        amount=bet.amount,
+        outcome=outcome,
+        payout=payout,
+    )
+
+
+def _next_point(total: int, point_before: int | None) -> int | None:
+    if point_before is None:
+        return total if total in POINT_NUMBERS else None
+    if total in (SEVEN, point_before):
+        return None
+    return point_before

@@ -1026,6 +1026,71 @@ class TestComeOddsResolution:
         assert by_kind[BetType.COME_ODDS].payout == -10
 
 
+class TestDontComeOddsResolution:
+    """Don't-come odds follow their linked don't-come bet's point.
+
+    Mirror of :py:class:`TestComeOddsResolution`: placement validation,
+    point inheritance, seven-out win at lay odds, point-hit loss.
+    """
+
+    def test_dont_come_odds_inherits_linked_bet_point(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # table point 6
+        dc_id = table.place_bet(BetType.DONT_COME, 5)
+        table.roll()  # dont-come travels to 8
+        odds_id = table.place_bet(BetType.DONT_COME_ODDS, 12, linked_bet_id=dc_id)
+        odds_bet = next(b for b in table.active_bets if b.bet_id == odds_id)
+        assert odds_bet.point == 8
+        assert odds_bet.parent_bet_id == dc_id
+
+    def test_dont_come_odds_rejected_without_travelled_dont_come(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        dc_id = table.place_bet(BetType.DONT_COME, 5)
+        # No roll yet — the dont-come has no come point.
+        with pytest.raises(ValueError, match="have a point"):
+            table.place_bet(BetType.DONT_COME_ODDS, 10, linked_bet_id=dc_id)
+
+    def test_dont_come_odds_wins_on_seven_out(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(1, 6)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        dc_id = table.place_bet(BetType.DONT_COME, 5)
+        table.roll()  # travels to 8
+        # $12 lay behind point 8 at 5:6 pays (12 * 5) // 6 = 10
+        table.place_bet(BetType.DONT_COME_ODDS, 12, linked_bet_id=dc_id)
+        result = table.roll()
+        by_kind = {res.kind: res for res in result.resolutions}
+        assert by_kind[BetType.DONT_COME].outcome is Outcome.WIN
+        assert by_kind[BetType.DONT_COME].payout == 5
+        assert by_kind[BetType.DONT_COME_ODDS].outcome is Outcome.WIN
+        assert by_kind[BetType.DONT_COME_ODDS].payout == 10
+
+    def test_dont_come_odds_loses_when_point_hit(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(3, 5)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        dc_id = table.place_bet(BetType.DONT_COME, 5)
+        table.roll()  # travels to 8
+        table.place_bet(BetType.DONT_COME_ODDS, 12, linked_bet_id=dc_id)
+        result = table.roll()  # 8 rolled → dont-come and its odds both lose
+        by_kind = {res.kind: res for res in result.resolutions}
+        assert by_kind[BetType.DONT_COME].outcome is Outcome.LOSE
+        assert by_kind[BetType.DONT_COME].payout == -5
+        assert by_kind[BetType.DONT_COME_ODDS].outcome is Outcome.LOSE
+        assert by_kind[BetType.DONT_COME_ODDS].payout == -12
+
+
 class TestEngineConvergenceVsClosedForm:
     """Monte Carlo cross-checks: engine edges match closed-form values.
 

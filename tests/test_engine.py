@@ -397,6 +397,67 @@ class TestLinkedBetIdTypeSafety:
             table.place_bet(BetType.DONT_COME_ODDS, 10, linked_bet_id=bad)  # type: ignore[arg-type]
 
 
+class TestTravelledField:
+    """``RollResolution.travelled`` exposes point-set transitions.
+
+    The list holds exactly the bets whose ``point`` changed during a
+    roll without the bet resolving — pass-line bets gaining the table
+    point on a come-out, come bets travelling to their own come point.
+    Strategies consuming this field do not need to diff
+    ``active_bets`` themselves to observe travel events.
+    """
+
+    def test_empty_when_no_bets(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 4)]))
+        result = table.roll()
+        assert result.travelled == ()
+
+    def test_pass_line_travel_appears_in_travelled(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        bet_id = table.place_bet(BetType.PASS_LINE, 5)
+        result = table.roll()
+        assert result.resolutions == ()
+        (travelled,) = result.travelled
+        assert travelled.bet_id == bet_id
+        assert travelled.kind is BetType.PASS_LINE
+        assert travelled.point == 6
+
+    def test_non_resolving_point_phase_roll_has_no_travel(self) -> None:
+        table = Table(
+            roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(2, 2)]),  # point 6, then 4
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # travel
+        result = table.roll()  # 4 is neither 6 nor 7 → carry over unchanged
+        assert result.travelled == ()
+
+    def test_come_out_seven_resolves_without_travel(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        result = table.roll()
+        assert result.resolutions != ()
+        assert result.travelled == ()
+
+    def test_multiple_come_bets_one_travels_one_waits(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [
+                    DiceRoll(3, 3),  # table point 6
+                    DiceRoll(4, 4),  # come A travels to 8
+                    DiceRoll(2, 3),  # come B travels to 5, come A unchanged
+                ]
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        a = table.place_bet(BetType.COME, 5)
+        first = table.roll()  # come A travels
+        assert {b.bet_id for b in first.travelled} == {a}
+        b = table.place_bet(BetType.COME, 5)
+        second = table.roll()  # come B travels; come A unchanged
+        assert {bet.bet_id for bet in second.travelled} == {b}
+
+
 class TestActiveBetParentField:
     """Odds bets expose their parent bet id via ``parent_bet_id``."""
 
@@ -604,6 +665,10 @@ class TestComeBetResolution:
         result = table.roll()
         # Come bet travelled, so it does not resolve — no come resolution.
         assert not any(r.kind is BetType.COME for r in result.resolutions)
+        # It does appear in the travelled list with its new point.
+        (travelled,) = result.travelled
+        assert travelled.bet_id == come_id
+        assert travelled.point == 8
         come_bet = next(b for b in table.active_bets if b.bet_id == come_id)
         assert come_bet.point == 8
 
@@ -658,6 +723,45 @@ class TestComeBetResolution:
             assert res.payout == -5
         assert table.active_bets == ()
         assert table.point is None
+
+    def test_pass_line_wins_and_fresh_come_travels_on_same_roll(self) -> None:
+        # Subtle dual transition: the shooter is on point 6, there is
+        # both a pass-line bet on 6 and a fresh come bet with no point.
+        # Rolling 6 resolves the pass line (win) while the come bet
+        # *simultaneously* travels to its own point 6. The table goes
+        # back to come-out, the come bet stays on the table with
+        # point=6, and the travelled list captures the come bet's
+        # transition (the pass-line bet is gone from active bets but
+        # appears in resolutions instead).
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 2)],  # come-out 6, then 6
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        come_id = table.place_bet(BetType.COME, 5)
+        result = table.roll()
+
+        pass_res = next(r for r in result.resolutions if r.kind is BetType.PASS_LINE)
+        assert pass_res.outcome is Outcome.WIN
+        assert pass_res.payout == 5
+
+        # Come bet did not resolve, it travelled.
+        assert not any(r.kind is BetType.COME for r in result.resolutions)
+        (travelled,) = result.travelled
+        assert travelled.bet_id == come_id
+        assert travelled.point == 6
+
+        # Table point transitioned 6 → None (pass line won the point).
+        assert result.point_before == 6
+        assert result.point_after is None
+        assert table.point is None
+
+        # Only the come bet (now with point 6) remains on the table.
+        (remaining,) = table.active_bets
+        assert remaining.bet_id == come_id
+        assert remaining.point == 6
 
     def test_fresh_come_on_seven_is_a_natural_win(self) -> None:
         # Subtle craps rule: a come bet placed on the roll *before* a 7 is

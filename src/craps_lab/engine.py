@@ -190,16 +190,30 @@ class BetResolution:
 class RollResolution:
     """Everything that happened on one roll of a :py:class:`Table`.
 
-    Carries the raw :py:class:`DiceRoll`, the table's point before
-    and after this roll (so strategies can react to point-set and
-    seven-out transitions without having to diff ``table.point``
-    themselves), and the list of bets whose state resolved.
+    Carries:
+
+    * the raw :py:class:`DiceRoll`,
+    * the table's point before and after this roll (so strategies
+      can react to point-set and seven-out transitions without
+      having to diff ``table.point`` themselves),
+    * :py:attr:`resolutions` — every bet whose state settled (win,
+      lose, or push),
+    * :py:attr:`travelled` — every bet that *changed its own point*
+      on this roll without resolving. A pass-line bet gaining a
+      point on the come-out and a come bet travelling to its own
+      come point both appear here. Strategies that want to react
+      to "my come bet just travelled to 8, place some odds behind
+      it" read this list rather than diffing ``active_bets``.
+
+    Bets that stayed on the table unchanged are absent from both
+    ``resolutions`` and ``travelled``.
     """
 
     roll: DiceRoll
     point_before: int | None
     point_after: int | None
     resolutions: tuple[BetResolution, ...]
+    travelled: tuple[ActiveBet, ...] = ()
 
 
 class Table:
@@ -289,26 +303,30 @@ class Table:
         """Roll the dice once and resolve every active bet against it.
 
         Returns a :py:class:`RollResolution` describing the dice,
-        the table's point state before and after the roll, and
-        every bet whose state settled. Bets that did not resolve
-        stay on the table and do not appear in the resolution list
-        — except for pass-line / come bets that *travelled* to
-        their own point on a come-out roll, which also stay on the
-        table without a resolution entry (the transition is visible
-        via :py:attr:`ActiveBet.point` on the carried-forward bet).
+        the table's point state before and after the roll, every
+        bet whose state settled (``resolutions``), and every bet
+        that changed its own point without settling (``travelled``).
+        Bets that stayed on the table unchanged appear in neither.
         """
         dice = self._roller.roll()
         total = dice.total
         point_before = self._point
 
         resolutions: list[BetResolution] = []
+        travelled: list[ActiveBet] = []
         carried_over: list[ActiveBet] = []
         for bet in self._bets:
             step = _step_bet(bet, total)
             if isinstance(step, BetResolution):
                 resolutions.append(step)
-            else:
-                carried_over.append(step)
+                continue
+            carried_over.append(step)
+            # Identity comparison works here because the resolvers only
+            # return a new ActiveBet via ``replace(bet, point=...)`` when
+            # the bet's state changed; a non-resolving roll returns the
+            # same object unchanged.
+            if step is not bet:
+                travelled.append(step)
 
         self._bets = carried_over
         self._point = _next_point(total, point_before)
@@ -318,6 +336,7 @@ class Table:
             point_before=point_before,
             point_after=self._point,
             resolutions=tuple(resolutions),
+            travelled=tuple(travelled),
         )
 
     def _validate_placement(self, kind: BetType, linked_bet_id: int | None) -> None:

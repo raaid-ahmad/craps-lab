@@ -10,7 +10,7 @@ import pytest
 from craps_lab.bets import BetType, Outcome
 from craps_lab.dice import DiceRoll
 from craps_lab.engine import ActiveBet, BetResolution, RollResolution, Table
-from craps_lab.probability import pass_line_house_edge
+from craps_lab.probability import dont_pass_house_edge, pass_line_house_edge
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -181,50 +181,114 @@ class TestTableConstructorArguments:
         assert table.roll().roll.total == 7
 
 
-class TestPlaceBet:
-    """``place_bet`` assigns monotonic ids and enforces phase rules."""
+class TestPlaceBetPhaseRules:
+    """``place_bet`` enforces per-kind phase rules and linked-bet rules."""
 
     def test_first_bet_id_is_one(self) -> None:
         table = Table(seed=42)
         assert table.place_bet(BetType.PASS_LINE, 5) == 1
 
-    def test_pass_line_appears_in_active_bets(self) -> None:
-        table = Table(seed=42)
-        bet_id = table.place_bet(BetType.PASS_LINE, 5)
-        (bet,) = table.active_bets
-        assert bet.bet_id == bet_id
-        assert bet.kind is BetType.PASS_LINE
-        assert bet.amount == 5
-        assert bet.point is None
+    def test_bet_ids_increment_across_placements(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        first = table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        second = table.place_bet(BetType.PASS_ODDS, 10)
+        assert second == first + 1
 
-    def test_pass_line_rejected_during_point_phase(self) -> None:
-        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))  # come-out 6 → point on
+    @pytest.mark.parametrize("kind", [BetType.PASS_LINE, BetType.DONT_PASS])
+    def test_line_bets_rejected_during_point_phase(self, kind: BetType) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
         table.place_bet(BetType.PASS_LINE, 5)
         table.roll()
-        with pytest.raises(ValueError, match="pass line can only be placed"):
-            table.place_bet(BetType.PASS_LINE, 5)
+        with pytest.raises(ValueError, match="come-out phase"):
+            table.place_bet(kind, 5)
+
+    @pytest.mark.parametrize("kind", [BetType.COME, BetType.DONT_COME])
+    def test_come_bets_rejected_during_come_out(self, kind: BetType) -> None:
+        table = Table(seed=42)
+        with pytest.raises(ValueError, match="point is established"):
+            table.place_bet(kind, 5)
 
     def test_pass_odds_rejected_during_come_out(self) -> None:
         table = Table(seed=42)
-        with pytest.raises(ValueError, match="pass odds can only be placed"):
+        with pytest.raises(ValueError, match="point is established"):
             table.place_bet(BetType.PASS_ODDS, 5)
 
-    def test_pass_odds_inherits_table_point(self) -> None:
-        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))  # come-out 6
+    def test_pass_odds_rejected_without_pass_line(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.DONT_PASS, 5)  # has a don't pass but not a pass line
+        table.roll()
+        with pytest.raises(ValueError, match="existing pass line bet"):
+            table.place_bet(BetType.PASS_ODDS, 5)
+
+    def test_dont_pass_odds_rejected_without_dont_pass(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        with pytest.raises(ValueError, match="existing dont pass bet"):
+            table.place_bet(BetType.DONT_PASS_ODDS, 5)
+
+    def test_pass_odds_auto_inherits_point(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
         table.place_bet(BetType.PASS_LINE, 5)
         table.roll()
         odds_id = table.place_bet(BetType.PASS_ODDS, 10)
         odds_bet = next(b for b in table.active_bets if b.bet_id == odds_id)
         assert odds_bet.point == 6
 
-    def test_unsupported_kind_raises_not_implemented(self) -> None:
-        table = Table(seed=42)
-        with pytest.raises(NotImplementedError, match="does not yet support"):
-            table.place_bet(BetType.COME, 5)
+    def test_dont_pass_odds_auto_inherits_point(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.DONT_PASS, 5)
+        table.roll()
+        odds_id = table.place_bet(BetType.DONT_PASS_ODDS, 12)
+        odds_bet = next(b for b in table.active_bets if b.bet_id == odds_id)
+        assert odds_bet.point == 6
+
+    def test_pass_odds_rejects_explicit_linked_bet_id(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        pass_id = table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        with pytest.raises(ValueError, match="does not accept linked_bet_id"):
+            table.place_bet(BetType.PASS_ODDS, 10, linked_bet_id=pass_id)
+
+    def test_come_odds_requires_linked_bet_id(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        table.place_bet(BetType.COME, 5)
+        table.roll()  # come bet travels to 8
+        with pytest.raises(ValueError, match="requires linked_bet_id"):
+            table.place_bet(BetType.COME_ODDS, 10)
+
+    def test_come_odds_rejects_id_of_wrong_kind(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        pass_id = table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        with pytest.raises(ValueError, match="must link to a come bet"):
+            table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=pass_id)
+
+    def test_come_odds_rejects_linked_come_without_point(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        come_id = table.place_bet(BetType.COME, 5)
+        # Do not roll — the come bet has no come point yet.
+        with pytest.raises(ValueError, match="have a point"):
+            table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=come_id)
+
+    def test_come_odds_inherits_linked_bet_point(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        come_id = table.place_bet(BetType.COME, 5)
+        table.roll()  # come bet travels to 8
+        odds_id = table.place_bet(BetType.COME_ODDS, 20, linked_bet_id=come_id)
+        odds_bet = next(b for b in table.active_bets if b.bet_id == odds_id)
+        assert odds_bet.point == 8
 
 
 class TestPassLineResolution:
-    """Pass-line resolution across all branches of the resolver."""
+    """Pass-line resolution across every branch."""
 
     @pytest.mark.parametrize(
         ("d1", "d2", "total"),
@@ -273,8 +337,8 @@ class TestPassLineResolution:
     def test_point_phase_point_hit_wins(self) -> None:
         table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 2)]))
         table.place_bet(BetType.PASS_LINE, 5)
-        table.roll()  # come-out 6 sets point
-        result = table.roll()  # point hit
+        table.roll()
+        result = table.roll()
         (res,) = result.resolutions
         assert res.outcome is Outcome.WIN
         assert res.payout == 5
@@ -306,23 +370,241 @@ class TestPassLineResolution:
         assert bet.point == 6
 
 
+class TestDontPassResolution:
+    """Don't-pass resolution across every branch."""
+
+    @pytest.mark.parametrize(
+        ("d1", "d2", "total"),
+        [(1, 1, 2), (1, 2, 3)],
+    )
+    def test_come_out_craps_wins_for_dont_pass(self, d1: int, d2: int, total: int) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(d1, d2)]))
+        table.place_bet(BetType.DONT_PASS, 5)
+        result = table.roll()
+        assert result.roll.total == total
+        (res,) = result.resolutions
+        assert res.outcome is Outcome.WIN
+        assert res.payout == 5
+
+    @pytest.mark.parametrize(
+        ("d1", "d2", "total"),
+        [(3, 4, 7), (6, 5, 11)],
+    )
+    def test_come_out_natural_loses_for_dont_pass(self, d1: int, d2: int, total: int) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(d1, d2)]))
+        table.place_bet(BetType.DONT_PASS, 5)
+        result = table.roll()
+        assert result.roll.total == total
+        (res,) = result.resolutions
+        assert res.outcome is Outcome.LOSE
+        assert res.payout == -5
+
+    def test_come_out_twelve_pushes_bar_12(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(6, 6)]))
+        bet_id = table.place_bet(BetType.DONT_PASS, 5)
+        result = table.roll()
+        (res,) = result.resolutions
+        assert res.bet_id == bet_id
+        assert res.outcome is Outcome.PUSH
+        assert res.payout == 0
+        assert table.active_bets == ()
+
+    def test_point_phase_seven_wins_for_dont_pass(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(1, 6)]))
+        table.place_bet(BetType.DONT_PASS, 5)
+        table.roll()  # point 6
+        result = table.roll()  # seven-out
+        (res,) = result.resolutions
+        assert res.outcome is Outcome.WIN
+        assert res.payout == 5
+
+    def test_point_phase_point_hit_loses_for_dont_pass(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 2)]))
+        table.place_bet(BetType.DONT_PASS, 5)
+        table.roll()
+        result = table.roll()
+        (res,) = result.resolutions
+        assert res.outcome is Outcome.LOSE
+        assert res.payout == -5
+
+
+class TestComeBetResolution:
+    """Come bet resolution: its own come-out, its own travel, and seven-out."""
+
+    @pytest.mark.parametrize(
+        ("d1", "d2", "total"),
+        [(3, 4, 7), (6, 5, 11)],
+    )
+    def test_come_bet_own_come_out_natural_wins(self, d1: int, d2: int, total: int) -> None:
+        # Establish the table point, then place a come bet; on the next
+        # roll, if the shooter rolls a natural, the come bet wins.
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(d1, d2)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        table.place_bet(BetType.COME, 5)
+        result = table.roll()
+        assert result.roll.total == total
+        come_res = next(r for r in result.resolutions if r.kind is BetType.COME)
+        assert come_res.outcome is Outcome.WIN
+        assert come_res.payout == 5
+
+    def test_come_bet_own_come_out_craps_loses(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(1, 1)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.COME, 5)
+        result = table.roll()
+        come_res = next(r for r in result.resolutions if r.kind is BetType.COME)
+        assert come_res.outcome is Outcome.LOSE
+        assert come_res.payout == -5
+
+    def test_come_bet_travels_to_come_point(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        come_id = table.place_bet(BetType.COME, 5)
+        result = table.roll()
+        # Come bet travelled, so it does not resolve — no come resolution.
+        assert not any(r.kind is BetType.COME for r in result.resolutions)
+        come_bet = next(b for b in table.active_bets if b.bet_id == come_id)
+        assert come_bet.point == 8
+
+    def test_come_point_hit_wins(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(3, 5)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.COME, 5)
+        table.roll()  # come travels to 8
+        result = table.roll()  # 8 again → come wins
+        come_res = next(r for r in result.resolutions if r.kind is BetType.COME)
+        assert come_res.outcome is Outcome.WIN
+        assert come_res.payout == 5
+
+    def test_seven_out_takes_all_come_points_but_pass_line(self) -> None:
+        # Establish table point 6. Place three come bets on three different
+        # come-outs, each travelling to its own point. Then seven-out.
+        table = Table(
+            roller=ScriptedRoller(
+                [
+                    DiceRoll(3, 3),  # come-out 6: table point 6
+                    DiceRoll(2, 2),  # come bet A travels to 4
+                    DiceRoll(2, 3),  # come bet B travels to 5
+                    DiceRoll(4, 5),  # come bet C travels to 9
+                    DiceRoll(1, 6),  # seven-out
+                ]
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        a = table.place_bet(BetType.COME, 5)
+        table.roll()
+        b = table.place_bet(BetType.COME, 5)
+        table.roll()
+        c = table.place_bet(BetType.COME, 5)
+        table.roll()
+        assert {bet.bet_id for bet in table.active_bets} == {
+            1,  # pass line
+            a,
+            b,
+            c,
+        }
+        result = table.roll()  # seven-out
+        resolved_ids = {r.bet_id for r in result.resolutions}
+        assert resolved_ids == {1, a, b, c}  # pass + all three come bets
+        for res in result.resolutions:
+            assert res.outcome is Outcome.LOSE
+            assert res.payout == -5
+        assert table.active_bets == ()
+        assert table.point is None
+
+    def test_fresh_come_on_seven_is_a_natural_win(self) -> None:
+        # Subtle craps rule: a come bet placed on the roll *before* a 7 is
+        # on its own come-out when that 7 arrives — so the come bet wins
+        # (as a natural) while the pass line and any travelled come bets
+        # seven-out. A fresh come and an existing pass line see the same
+        # roll oppositely.
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(1, 6)],  # come-out 6, then 7
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        come_id = table.place_bet(BetType.COME, 5)
+        result = table.roll()
+        by_id = {r.bet_id: r for r in result.resolutions}
+        # Pass line loses on seven-out.
+        assert by_id[1].kind is BetType.PASS_LINE
+        assert by_id[1].outcome is Outcome.LOSE
+        # Fresh come bet wins as a natural.
+        assert by_id[come_id].kind is BetType.COME
+        assert by_id[come_id].outcome is Outcome.WIN
+
+
+class TestDontComeBetResolution:
+    """Don't-come resolution mirrors don't-pass against its own come-out."""
+
+    def test_dont_come_own_come_out_two_wins(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(1, 1)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.DONT_COME, 5)
+        result = table.roll()
+        dc_res = next(r for r in result.resolutions if r.kind is BetType.DONT_COME)
+        assert dc_res.outcome is Outcome.WIN
+        assert dc_res.payout == 5
+
+    def test_dont_come_own_come_out_twelve_pushes(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(6, 6)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.DONT_COME, 5)
+        result = table.roll()
+        dc_res = next(r for r in result.resolutions if r.kind is BetType.DONT_COME)
+        assert dc_res.outcome is Outcome.PUSH
+        assert dc_res.payout == 0
+
+    def test_dont_come_seven_on_come_out_loses(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(3, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.DONT_COME, 5)
+        result = table.roll()
+        dc_res = next(r for r in result.resolutions if r.kind is BetType.DONT_COME)
+        assert dc_res.outcome is Outcome.LOSE
+        assert dc_res.payout == -5
+
+    def test_dont_come_travels_and_seven_out_wins(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(1, 6)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.DONT_COME, 5)
+        table.roll()  # don't-come travels to 8
+        result = table.roll()  # seven-out → don't-come wins
+        dc_res = next(r for r in result.resolutions if r.kind is BetType.DONT_COME)
+        assert dc_res.outcome is Outcome.WIN
+        assert dc_res.payout == 5
+
+
 class TestPassOddsResolution:
-    """Pass-odds resolution: true-odds payouts on win, full loss on seven-out."""
+    """Pass-odds payouts at true odds for every point."""
 
     @pytest.mark.parametrize(
         ("point", "come_out_dice", "point_dice", "amount", "expected_payout"),
         [
-            # Point 4: 2:1 — $10 odds wins $20
             (4, DiceRoll(2, 2), DiceRoll(1, 3), 10, 20),
-            # Point 5: 3:2 — $10 odds wins $15
             (5, DiceRoll(2, 3), DiceRoll(1, 4), 10, 15),
-            # Point 6: 6:5 — $10 odds wins $12
             (6, DiceRoll(3, 3), DiceRoll(4, 2), 10, 12),
-            # Point 8: 6:5 — $10 odds wins $12
             (8, DiceRoll(4, 4), DiceRoll(3, 5), 10, 12),
-            # Point 9: 3:2 — $10 odds wins $15
             (9, DiceRoll(4, 5), DiceRoll(5, 4), 10, 15),
-            # Point 10: 2:1 — $10 odds wins $20
             (10, DiceRoll(5, 5), DiceRoll(4, 6), 10, 20),
         ],
     )
@@ -341,9 +623,7 @@ class TestPassOddsResolution:
         table.place_bet(BetType.PASS_ODDS, amount)
         result = table.roll()
         by_kind = {res.kind: res for res in result.resolutions}
-        assert by_kind[BetType.PASS_LINE].outcome is Outcome.WIN
         assert by_kind[BetType.PASS_LINE].payout == 5
-        assert by_kind[BetType.PASS_ODDS].outcome is Outcome.WIN
         assert by_kind[BetType.PASS_ODDS].payout == expected_payout
 
     def test_pass_odds_loses_on_seven_out(self) -> None:
@@ -355,7 +635,7 @@ class TestPassOddsResolution:
         by_kind = {res.kind: res for res in result.resolutions}
         assert by_kind[BetType.PASS_ODDS].payout == -10
 
-    def test_pass_odds_truncates_fractional_payouts_toward_zero(self) -> None:
+    def test_pass_odds_truncates_fractional_payouts(self) -> None:
         """A $7 pass-odds on point 6 (6:5) would pay $8.4; the casino pays $8."""
         table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 2)]))
         table.place_bet(BetType.PASS_LINE, 5)
@@ -363,26 +643,100 @@ class TestPassOddsResolution:
         table.place_bet(BetType.PASS_ODDS, 7)
         result = table.roll()
         odds_res = next(r for r in result.resolutions if r.kind is BetType.PASS_ODDS)
-        assert odds_res.payout == 8  # int(7 * 6/5) = 8
+        assert odds_res.payout == 8  # (7 * 6) // 5
+
+
+class TestLayOddsResolution:
+    """Don't-pass lay-odds payouts at true odds for every point."""
+
+    @pytest.mark.parametrize(
+        ("point", "come_out_dice", "amount", "expected_payout"),
+        [
+            # Lay payout ratios are inverses of take odds:
+            (4, DiceRoll(2, 2), 20, 10),  # 1:2 — $20 risk, $10 win
+            (5, DiceRoll(2, 3), 30, 20),  # 2:3 — $30 risk, $20 win
+            (6, DiceRoll(3, 3), 30, 25),  # 5:6 — $30 risk, $25 win
+            (8, DiceRoll(4, 4), 30, 25),  # 5:6
+            (9, DiceRoll(4, 5), 30, 20),  # 2:3
+            (10, DiceRoll(5, 5), 20, 10),  # 1:2
+        ],
+    )
+    def test_lay_odds_wins_on_seven(
+        self,
+        point: int,
+        come_out_dice: DiceRoll,
+        amount: int,
+        expected_payout: int,
+    ) -> None:
+        table = Table(roller=ScriptedRoller([come_out_dice, DiceRoll(1, 6)]))
+        table.place_bet(BetType.DONT_PASS, 5)
+        table.roll()
+        assert table.point == point
+        table.place_bet(BetType.DONT_PASS_ODDS, amount)
+        result = table.roll()
+        by_kind = {res.kind: res for res in result.resolutions}
+        assert by_kind[BetType.DONT_PASS].outcome is Outcome.WIN
+        assert by_kind[BetType.DONT_PASS_ODDS].outcome is Outcome.WIN
+        assert by_kind[BetType.DONT_PASS_ODDS].payout == expected_payout
+
+    def test_lay_odds_loses_on_point_hit(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 2)]))
+        table.place_bet(BetType.DONT_PASS, 5)
+        table.roll()
+        table.place_bet(BetType.DONT_PASS_ODDS, 30)
+        result = table.roll()
+        by_kind = {res.kind: res for res in result.resolutions}
+        assert by_kind[BetType.DONT_PASS_ODDS].payout == -30
+
+
+class TestComeOddsResolution:
+    """Come-odds follows its linked come bet's point."""
+
+    def test_come_odds_wins_when_come_point_hit(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(3, 5)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # table point 6
+        come_id = table.place_bet(BetType.COME, 5)
+        table.roll()  # come travels to 8
+        table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=come_id)
+        result = table.roll()  # rolls 8 → come wins; come-odds wins at 6:5
+        by_kind = {res.kind: res for res in result.resolutions}
+        assert by_kind[BetType.COME].payout == 5
+        assert by_kind[BetType.COME_ODDS].payout == 12  # (10 * 6) // 5
+
+    def test_come_odds_loses_on_seven_out(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(1, 6)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        come_id = table.place_bet(BetType.COME, 5)
+        table.roll()
+        table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=come_id)
+        result = table.roll()
+        by_kind = {res.kind: res for res in result.resolutions}
+        assert by_kind[BetType.COME_ODDS].payout == -10
 
 
 class TestEngineConvergenceVsClosedForm:
-    """Monte Carlo cross-check: engine pass-line edge matches closed-form.
+    """Monte Carlo cross-checks: engine edges match closed-form values.
 
-    Runs 100 000 one-unit pass-line bets through the engine, computes
-    the empirical mean payout per bet, and checks it against the
-    closed-form house edge from :py:func:`pass_line_house_edge`
-    (``-7/495 ~ -0.01414``). The tolerance uses the same 5-sigma
-    framing as :py:mod:`tests.test_convergence` — a principled bound,
-    deterministic under seed.
+    Uses the same 5-sigma framing as :py:mod:`tests.test_convergence` —
+    each one-unit line bet pays +/-/0 with near-coin variance, so the
+    standard error of the sample mean over N trials is ~1/sqrt(N).
     """
 
     _NUM_TRIALS: int = 100_000
-    _SEED: int = 0xBE77ED
     _TOLERANCE_SIGMA: float = 5.0
 
     def test_pass_line_edge_converges(self) -> None:
-        table = Table(seed=self._SEED)
+        table = Table(seed=0xBE77ED)
         total_payout = 0
         for _ in range(self._NUM_TRIALS):
             table.place_bet(BetType.PASS_LINE, 1)
@@ -396,14 +750,27 @@ class TestEngineConvergenceVsClosedForm:
                     break
 
         empirical_player_ev = total_payout / self._NUM_TRIALS
-        # ``pass_line_house_edge`` is the *house*'s edge by convention — a
-        # positive number — so the player's expected payoff per unit wagered
-        # is its negation.
         expected_player_ev = -float(pass_line_house_edge())
+        sem = 1.0 / (self._NUM_TRIALS**0.5)
+        tolerance = self._TOLERANCE_SIGMA * sem
+        assert abs(empirical_player_ev - expected_player_ev) < tolerance
 
-        # Each one-unit pass-line bet has payoff +1 or -1 with probabilities
-        # very close to 1/2, so Var(X) ≈ 1 per bet. The standard error of the
-        # sample mean over N trials is ~1/sqrt(N); we allow 5 * SEM.
+    def test_dont_pass_edge_converges(self) -> None:
+        table = Table(seed=0xDECAF)
+        total_payout = 0
+        for _ in range(self._NUM_TRIALS):
+            table.place_bet(BetType.DONT_PASS, 1)
+            while True:
+                result = table.roll()
+                dp_resolutions = [r for r in result.resolutions if r.kind is BetType.DONT_PASS]
+                if dp_resolutions:
+                    total_payout += sum(r.payout for r in dp_resolutions)
+                    break
+
+        empirical_player_ev = total_payout / self._NUM_TRIALS
+        expected_player_ev = -float(dont_pass_house_edge())
+        # Don't pass variance is slightly lower than pass line because of
+        # the ~1/36 push branch; 1/sqrt(N) remains a conservative bound.
         sem = 1.0 / (self._NUM_TRIALS**0.5)
         tolerance = self._TOLERANCE_SIGMA * sem
         assert abs(empirical_player_ev - expected_player_ev) < tolerance

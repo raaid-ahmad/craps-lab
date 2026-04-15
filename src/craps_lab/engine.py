@@ -19,8 +19,11 @@ The module exposes four types:
   before and after, and every bet that changed state on this roll.
 * :py:class:`Table` — the state machine itself.
 
-This commit implements pass line + pass odds. Come, don't pass,
-don't come, and their odds siblings land in the next commit.
+This commit completes the line-bet family: pass line / come bets
+share a resolver (both track their state through their own
+``point`` field, not the table point), and so do don't-pass /
+don't-come. Take-odds (pass odds, come odds) and lay-odds
+(don't-pass odds, don't-come odds) are unified the same way.
 """
 
 from __future__ import annotations
@@ -29,6 +32,10 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from craps_lab.bets import (
+    DONT_PASS_BAR,
+    DONT_PASS_COME_OUT_LOSES,
+    DONT_PASS_COME_OUT_WINS,
+    DONT_PASS_LAY_PAYOUT_RATIO,
     PASS_LINE_CRAPS_LOSERS,
     PASS_LINE_NATURAL_WINNERS,
     PASS_ODDS_PAYOUT_RATIO,
@@ -42,6 +49,16 @@ from craps_lab.dice import DiceRoller
 if TYPE_CHECKING:
     from craps_lab.dice import DiceRoll
     from craps_lab.play import RollSource
+
+
+_PASS_FAMILY: frozenset[BetType] = frozenset({BetType.PASS_LINE, BetType.COME})
+_DONT_PASS_FAMILY: frozenset[BetType] = frozenset({BetType.DONT_PASS, BetType.DONT_COME})
+_TAKE_ODDS_FAMILY: frozenset[BetType] = frozenset({BetType.PASS_ODDS, BetType.COME_ODDS})
+_LAY_ODDS_FAMILY: frozenset[BetType] = frozenset({BetType.DONT_PASS_ODDS, BetType.DONT_COME_ODDS})
+_LINE_BETS: frozenset[BetType] = frozenset(
+    {BetType.PASS_LINE, BetType.DONT_PASS, BetType.COME, BetType.DONT_COME}
+)
+_COME_OUT_ONLY_LINE_BETS: frozenset[BetType] = frozenset({BetType.PASS_LINE, BetType.DONT_PASS})
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,7 +157,7 @@ class Table:
     Owns a dice source, a point-on / point-off flag, and a list of
     :py:class:`ActiveBet` records. Each call to :py:meth:`roll`
     advances the dice, resolves every active bet against the roll,
-    updates the point state, and returns a :py:class:`RollResolution`
+    updates the table point, and returns a :py:class:`RollResolution`
     summarising the transition.
 
     The dice source is either a seeded :py:class:`DiceRoller` built
@@ -174,18 +191,31 @@ class Table:
         """An immutable snapshot of bets currently on the table."""
         return tuple(self._bets)
 
-    def place_bet(self, kind: BetType, amount: int) -> int:
+    def place_bet(
+        self,
+        kind: BetType,
+        amount: int,
+        *,
+        linked_bet_id: int | None = None,
+    ) -> int:
         """Place a bet of the given kind and amount; return its ``bet_id``.
 
-        Phase validation is enforced here: pass line may only be
-        placed during the come-out phase; pass odds only during the
-        point phase, and only when the matching pass-line bet is
-        already on the table. Other bet kinds raise
-        :py:exc:`NotImplementedError` until the following commits
-        add them.
+        Phase validation is enforced here:
+
+        * Pass line / don't pass: come-out phase only.
+        * Come / don't come: point phase only (the table must have
+          an established point).
+        * Pass odds / don't-pass odds: point phase, with the matching
+          line bet already on the table. ``linked_bet_id`` is
+          auto-resolved — there is at most one pass-line and one
+          don't-pass bet at a time — so passing it explicitly is an
+          error.
+        * Come odds / don't-come odds: ``linked_bet_id`` is required
+          and must reference an active come / don't-come bet that
+          has already established its own point.
         """
-        self._validate_placement(kind)
-        bet_point = self._bet_point_for(kind)
+        self._validate_placement(kind, linked_bet_id)
+        bet_point = self._resolve_bet_point(kind, linked_bet_id)
         bet = ActiveBet(
             bet_id=self._next_bet_id,
             kind=kind,
@@ -200,13 +230,13 @@ class Table:
         """Roll the dice once and resolve every active bet against it.
 
         Returns a :py:class:`RollResolution` describing the dice,
-        the point state before and after the roll, and every bet
-        whose state settled. Bets that did not resolve (non-
-        resolving rolls in the point phase, or come bets awaiting
-        their own come-out) stay on the table and do not appear in
-        the resolution list — except for pass-line bets that
-        *travelled* to their own point on a come-out roll, which
-        also stay on the table without a resolution entry.
+        the table's point state before and after the roll, and
+        every bet whose state settled. Bets that did not resolve
+        stay on the table and do not appear in the resolution list
+        — except for pass-line / come bets that *travelled* to
+        their own point on a come-out roll, which also stay on the
+        table without a resolution entry (the transition is visible
+        via :py:attr:`ActiveBet.point` on the carried-forward bet).
         """
         dice = self._roller.roll()
         total = dice.total
@@ -215,7 +245,7 @@ class Table:
         resolutions: list[BetResolution] = []
         carried_over: list[ActiveBet] = []
         for bet in self._bets:
-            step = _step_bet(bet, total, point_before)
+            step = _step_bet(bet, total)
             if isinstance(step, BetResolution):
                 resolutions.append(step)
             else:
@@ -231,64 +261,143 @@ class Table:
             resolutions=tuple(resolutions),
         )
 
-    def _validate_placement(self, kind: BetType) -> None:
-        if kind is BetType.PASS_LINE:
-            if self._point is not None:
-                msg = "pass line can only be placed during the come-out phase"
-                raise ValueError(msg)
+    def _validate_placement(self, kind: BetType, linked_bet_id: int | None) -> None:
+        if kind in _LINE_BETS:
+            self._validate_line_bet(kind, linked_bet_id)
             return
-        if kind is BetType.PASS_ODDS:
-            if self._point is None:
-                msg = "pass odds can only be placed once a point is established"
-                raise ValueError(msg)
-            if self._find_pass_line_bet() is None:
-                msg = "pass odds requires an existing pass line bet"
-                raise ValueError(msg)
+        if kind in (BetType.PASS_ODDS, BetType.DONT_PASS_ODDS):
+            self._validate_line_odds(kind, linked_bet_id)
+            return
+        if kind is BetType.COME_ODDS:
+            self._require_linked_bet_with_point(kind, linked_bet_id, BetType.COME)
+            return
+        if kind is BetType.DONT_COME_ODDS:
+            self._require_linked_bet_with_point(kind, linked_bet_id, BetType.DONT_COME)
             return
         msg = f"engine does not yet support placing bet of kind {kind}"
         raise NotImplementedError(msg)
 
-    def _bet_point_for(self, kind: BetType) -> int | None:
-        # Pass-odds inherits the table's current point at placement time.
-        # Pass-line starts without a point; it acquires one when the
-        # come-out roll lands on a point number.
-        if kind is BetType.PASS_ODDS:
-            return self._point
+    def _validate_line_bet(self, kind: BetType, linked_bet_id: int | None) -> None:
+        self._reject_linked(kind, linked_bet_id)
+        if kind in _COME_OUT_ONLY_LINE_BETS:
+            self._require_come_out(kind)
+        else:
+            self._require_point_phase(kind)
+
+    def _validate_line_odds(self, kind: BetType, linked_bet_id: int | None) -> None:
+        self._reject_linked(kind, linked_bet_id)
+        self._require_point_phase(kind)
+        line_kind = BetType.PASS_LINE if kind is BetType.PASS_ODDS else BetType.DONT_PASS
+        if self._find_line_bet_with_point(line_kind) is None:
+            pretty = "pass line" if line_kind is BetType.PASS_LINE else "dont pass"
+            msg = f"{kind} requires an existing {pretty} bet with a point"
+            raise ValueError(msg)
+
+    def _resolve_bet_point(self, kind: BetType, linked_bet_id: int | None) -> int | None:
+        # Odds bets inherit their point at placement time, from either the
+        # unique line bet (pass / don't-pass odds) or the linked come bet
+        # (come / don't-come odds). Everything else starts without a point.
+        if kind in (BetType.PASS_ODDS, BetType.DONT_PASS_ODDS):
+            line_kind = BetType.PASS_LINE if kind is BetType.PASS_ODDS else BetType.DONT_PASS
+            line_bet = self._find_line_bet_with_point(line_kind)
+            # Validated upstream; this narrowing is for mypy.
+            if line_bet is None or line_bet.point is None:
+                msg = f"no matching line bet for {kind}"
+                raise RuntimeError(msg)
+            return line_bet.point
+        if kind in (BetType.COME_ODDS, BetType.DONT_COME_ODDS):
+            if linked_bet_id is None:
+                msg = f"{kind} requires linked_bet_id"
+                raise RuntimeError(msg)
+            linked = self._find_bet_by_id(linked_bet_id)
+            if linked is None or linked.point is None:
+                msg = f"linked bet {linked_bet_id} missing or has no point"
+                raise RuntimeError(msg)
+            return linked.point
         return None
 
-    def _find_pass_line_bet(self) -> ActiveBet | None:
+    def _reject_linked(self, kind: BetType, linked_bet_id: int | None) -> None:
+        if linked_bet_id is not None:
+            msg = f"{kind} does not accept linked_bet_id"
+            raise ValueError(msg)
+
+    def _require_come_out(self, kind: BetType) -> None:
+        if self._point is not None:
+            msg = f"{kind} can only be placed during the come-out phase"
+            raise ValueError(msg)
+
+    def _require_point_phase(self, kind: BetType) -> None:
+        if self._point is None:
+            msg = f"{kind} can only be placed once a point is established"
+            raise ValueError(msg)
+
+    def _require_linked_bet_with_point(
+        self,
+        odds_kind: BetType,
+        linked_bet_id: int | None,
+        line_kind: BetType,
+    ) -> None:
+        if linked_bet_id is None:
+            msg = f"{odds_kind} requires linked_bet_id"
+            raise ValueError(msg)
+        linked = self._find_bet_by_id(linked_bet_id)
+        if linked is None:
+            msg = f"linked_bet_id {linked_bet_id} does not match any active bet"
+            raise ValueError(msg)
+        if linked.kind is not line_kind:
+            msg = f"{odds_kind} must link to a {line_kind} bet, not {linked.kind}"
+            raise ValueError(msg)
+        if linked.point is None:
+            msg = f"{odds_kind} requires the linked {line_kind} bet to have a point"
+            raise ValueError(msg)
+
+    def _find_line_bet_with_point(self, kind: BetType) -> ActiveBet | None:
         for bet in self._bets:
-            if bet.kind is BetType.PASS_LINE:
+            if bet.kind is kind and bet.point is not None:
+                return bet
+        return None
+
+    def _find_bet_by_id(self, bet_id: int) -> ActiveBet | None:
+        for bet in self._bets:
+            if bet.bet_id == bet_id:
                 return bet
         return None
 
 
-def _step_bet(
-    bet: ActiveBet,
-    total: int,
-    point_before: int | None,
-) -> BetResolution | ActiveBet:
-    if bet.kind is BetType.PASS_LINE:
-        return _step_pass_line(bet, total, point_before)
-    if bet.kind is BetType.PASS_ODDS:
-        return _step_pass_odds(bet, total, point_before)
+def _step_bet(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    if bet.kind in _PASS_FAMILY:
+        return _step_pass_or_come(bet, total)
+    if bet.kind in _DONT_PASS_FAMILY:
+        return _step_dont_pass_or_come(bet, total)
+    if bet.kind in _TAKE_ODDS_FAMILY:
+        return _step_take_odds(bet, total)
+    if bet.kind in _LAY_ODDS_FAMILY:
+        return _step_lay_odds(bet, total)
     msg = f"engine cannot yet resolve bet kind {bet.kind}"
     raise NotImplementedError(msg)
 
 
-def _step_pass_line(
-    bet: ActiveBet,
-    total: int,
-    point_before: int | None,
-) -> BetResolution | ActiveBet:
-    if point_before is None:
-        # Come-out phase: 7/11 win, 2/3/12 lose, 4-10 travel to their own point.
-        if total in PASS_LINE_NATURAL_WINNERS:
-            return _resolve(bet, Outcome.WIN, bet.amount)
-        if total in PASS_LINE_CRAPS_LOSERS:
-            return _resolve(bet, Outcome.LOSE, -bet.amount)
-        return replace(bet, point=total)
-    # Point phase: resolved by 7 or by the bet's own point being rolled.
+def _step_pass_or_come(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    # Pass line and come bets share a resolver: both track their state
+    # through their own ``point`` field rather than the table point, so
+    # a come bet on its own come-out behaves identically to a pass-line
+    # bet on the table's come-out. When bet.point is None, the bet is
+    # in its own come-out phase; otherwise it is waiting for its point
+    # to be hit (win) or for a seven (lose).
+    if bet.point is None:
+        return _pass_come_out(bet, total)
+    return _pass_point_phase(bet, total)
+
+
+def _pass_come_out(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    if total in PASS_LINE_NATURAL_WINNERS:
+        return _resolve(bet, Outcome.WIN, bet.amount)
+    if total in PASS_LINE_CRAPS_LOSERS:
+        return _resolve(bet, Outcome.LOSE, -bet.amount)
+    return replace(bet, point=total)
+
+
+def _pass_point_phase(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
     if total == SEVEN:
         return _resolve(bet, Outcome.LOSE, -bet.amount)
     if total == bet.point:
@@ -296,23 +405,57 @@ def _step_pass_line(
     return bet
 
 
-def _step_pass_odds(
-    bet: ActiveBet,
-    total: int,
-    point_before: int | None,
-) -> BetResolution | ActiveBet:
-    if point_before is None:
-        msg = f"pass odds bet {bet.bet_id} resolving during come-out; engine invariant violated"
+def _step_dont_pass_or_come(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    # Mirror of :py:func:`_step_pass_or_come` with the bar-12 push on
+    # the bet's own come-out, and inverted wins / losses once the bet
+    # has travelled.
+    if bet.point is None:
+        return _dont_pass_come_out(bet, total)
+    return _dont_pass_point_phase(bet, total)
+
+
+def _dont_pass_come_out(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    if total in DONT_PASS_COME_OUT_WINS:
+        return _resolve(bet, Outcome.WIN, bet.amount)
+    if total in DONT_PASS_COME_OUT_LOSES:
+        return _resolve(bet, Outcome.LOSE, -bet.amount)
+    if total == DONT_PASS_BAR:
+        return _resolve(bet, Outcome.PUSH, 0)
+    return replace(bet, point=total)
+
+
+def _dont_pass_point_phase(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    if total == SEVEN:
+        return _resolve(bet, Outcome.WIN, bet.amount)
+    if total == bet.point:
+        return _resolve(bet, Outcome.LOSE, -bet.amount)
+    return bet
+
+
+def _step_take_odds(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    if bet.point is None:
+        msg = f"take-odds bet {bet.bet_id} has no point; engine invariant violated"
         raise RuntimeError(msg)
     if total == SEVEN:
         return _resolve(bet, Outcome.LOSE, -bet.amount)
-    if total == point_before:
-        # True-odds payout: integer-truncated so the engine never pays the
-        # player a fractional chip the casino would not pay at a real table.
-        payout = (bet.amount * PASS_ODDS_PAYOUT_RATIO[point_before].numerator) // (
-            PASS_ODDS_PAYOUT_RATIO[point_before].denominator
-        )
+    if total == bet.point:
+        ratio = PASS_ODDS_PAYOUT_RATIO[bet.point]
+        # Integer-truncated: the casino never pays a fractional chip.
+        payout = (bet.amount * ratio.numerator) // ratio.denominator
         return _resolve(bet, Outcome.WIN, payout)
+    return bet
+
+
+def _step_lay_odds(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    if bet.point is None:
+        msg = f"lay-odds bet {bet.bet_id} has no point; engine invariant violated"
+        raise RuntimeError(msg)
+    if total == SEVEN:
+        ratio = DONT_PASS_LAY_PAYOUT_RATIO[bet.point]
+        payout = (bet.amount * ratio.numerator) // ratio.denominator
+        return _resolve(bet, Outcome.WIN, payout)
+    if total == bet.point:
+        return _resolve(bet, Outcome.LOSE, -bet.amount)
     return bet
 
 

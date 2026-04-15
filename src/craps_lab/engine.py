@@ -61,6 +61,22 @@ _LINE_BETS: frozenset[BetType] = frozenset(
 _COME_OUT_ONLY_LINE_BETS: frozenset[BetType] = frozenset({BetType.PASS_LINE, BetType.DONT_PASS})
 
 
+def _reject_non_int_field(value: object, name: str) -> None:
+    # Exact-type discipline matches :py:class:`craps_lab.dice.DiceRoll`:
+    # booleans subclass int and would otherwise sneak through an
+    # ``isinstance`` check. For a project whose pitch is rigor, that
+    # is exactly the class of bug worth pre-empting at the boundary.
+    if type(value) is not int:
+        msg = f"{name} must be an int, got {type(value).__name__}"
+        raise TypeError(msg)
+
+
+def _reject_non_positive_field(value: int, name: str) -> None:
+    if value < 1:
+        msg = f"{name} must be positive, got {value}"
+        raise ValueError(msg)
+
+
 @dataclass(frozen=True, slots=True)
 class ActiveBet:
     """A single bet currently on the table.
@@ -76,30 +92,26 @@ class ActiveBet:
     point; for a come bet, when its first-roll sum establishes a
     come point; for odds bets, set at placement time to the
     underlying line bet's point.
+
+    ``parent_bet_id`` is the ``bet_id`` of the line bet an odds
+    wager is attached to, and ``None`` for non-odds bets. The
+    engine uses it to enforce at most one odds bet per parent
+    (two "pass odds behind the same pass line" is the
+    press-your-odds operation, which belongs on a later commit,
+    not a silent second :py:class:`ActiveBet`).
     """
 
     bet_id: int
     kind: BetType
     amount: int
     point: int | None = None
+    parent_bet_id: int | None = None
 
     def __post_init__(self) -> None:
-        # Exact-type discipline matches :py:class:`craps_lab.dice.DiceRoll`:
-        # booleans subclass int and would otherwise silently sneak through
-        # ``isinstance`` checks, and for a project whose pitch is rigor
-        # that is exactly the class of bug worth pre-empting at the boundary.
-        if type(self.bet_id) is not int:
-            msg = f"bet_id must be an int, got {type(self.bet_id).__name__}"
-            raise TypeError(msg)
-        if self.bet_id < 1:
-            msg = f"bet_id must be positive, got {self.bet_id}"
-            raise ValueError(msg)
-        if type(self.amount) is not int:
-            msg = f"amount must be an int, got {type(self.amount).__name__}"
-            raise TypeError(msg)
-        if self.amount < 1:
-            msg = f"amount must be positive, got {self.amount}"
-            raise ValueError(msg)
+        _reject_non_int_field(self.bet_id, "bet_id")
+        _reject_non_positive_field(self.bet_id, "bet_id")
+        _reject_non_int_field(self.amount, "amount")
+        _reject_non_positive_field(self.amount, "amount")
         if self.point is not None:
             if type(self.point) is not int:
                 msg = f"point must be an int or None, got {type(self.point).__name__}"
@@ -107,6 +119,13 @@ class ActiveBet:
             if self.point not in POINT_NUMBERS:
                 msg = f"point must be one of {POINT_NUMBERS}, got {self.point}"
                 raise ValueError(msg)
+        if self.parent_bet_id is not None:
+            if type(self.parent_bet_id) is not int:
+                msg = (
+                    f"parent_bet_id must be an int or None, got {type(self.parent_bet_id).__name__}"
+                )
+                raise TypeError(msg)
+            _reject_non_positive_field(self.parent_bet_id, "parent_bet_id")
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,27 +219,33 @@ class Table:
     ) -> int:
         """Place a bet of the given kind and amount; return its ``bet_id``.
 
-        Phase validation is enforced here:
+        Phase and uniqueness validation are enforced here:
 
-        * Pass line / don't pass: come-out phase only.
+        * Pass line / don't pass: come-out phase only, and at most
+          one of each kind active at a time. Pressing an existing
+          contract is a later feature, not a silent second bet.
         * Come / don't come: point phase only (the table must have
-          an established point).
-        * Pass odds / don't-pass odds: point phase, with the matching
-          line bet already on the table. ``linked_bet_id`` is
-          auto-resolved — there is at most one pass-line and one
-          don't-pass bet at a time — so passing it explicitly is an
-          error.
-        * Come odds / don't-come odds: ``linked_bet_id`` is required
-          and must reference an active come / don't-come bet that
-          has already established its own point.
+          an established point). Multiple come / don't-come bets
+          may be active simultaneously; each tracks its own point.
+        * Pass odds / don't-pass odds: point phase, with the
+          matching line bet already on the table, and no existing
+          odds bet already attached to it. ``linked_bet_id`` is
+          auto-resolved — at most one pass-line and one don't-pass
+          bet may exist — so passing it explicitly is an error.
+        * Come odds / don't-come odds: ``linked_bet_id`` is required,
+          must be an exact ``int``, must reference an active come /
+          don't-come bet that has established its own point, and
+          must not already have an odds bet attached.
         """
         self._validate_placement(kind, linked_bet_id)
         bet_point = self._resolve_bet_point(kind, linked_bet_id)
+        parent_bet_id = self._resolve_parent_bet_id(kind, linked_bet_id)
         bet = ActiveBet(
             bet_id=self._next_bet_id,
             kind=kind,
             amount=amount,
             point=bet_point,
+            parent_bet_id=parent_bet_id,
         )
         self._next_bet_id += 1
         self._bets.append(bet)
@@ -281,6 +306,9 @@ class Table:
         self._reject_linked(kind, linked_bet_id)
         if kind in _COME_OUT_ONLY_LINE_BETS:
             self._require_come_out(kind)
+            if self._find_any_bet_of_kind(kind) is not None:
+                msg = f"a {kind} bet is already active; only one may be placed at a time"
+                raise ValueError(msg)
         else:
             self._require_point_phase(kind)
 
@@ -288,32 +316,56 @@ class Table:
         self._reject_linked(kind, linked_bet_id)
         self._require_point_phase(kind)
         line_kind = BetType.PASS_LINE if kind is BetType.PASS_ODDS else BetType.DONT_PASS
-        if self._find_line_bet_with_point(line_kind) is None:
+        line_bet = self._find_line_bet_with_point(line_kind)
+        if line_bet is None:
             pretty = "pass line" if line_kind is BetType.PASS_LINE else "dont pass"
             msg = f"{kind} requires an existing {pretty} bet with a point"
+            raise ValueError(msg)
+        if self._find_odds_bet_for_parent(line_bet.bet_id) is not None:
+            msg = f"{kind} is already attached to bet {line_bet.bet_id}"
             raise ValueError(msg)
 
     def _resolve_bet_point(self, kind: BetType, linked_bet_id: int | None) -> int | None:
         # Odds bets inherit their point at placement time, from either the
         # unique line bet (pass / don't-pass odds) or the linked come bet
         # (come / don't-come odds). Everything else starts without a point.
+        parent = self._resolve_parent_bet(kind, linked_bet_id)
+        if parent is None:
+            return None
+        return parent.point
+
+    def _resolve_parent_bet_id(
+        self,
+        kind: BetType,
+        linked_bet_id: int | None,
+    ) -> int | None:
+        parent = self._resolve_parent_bet(kind, linked_bet_id)
+        return None if parent is None else parent.bet_id
+
+    def _resolve_parent_bet(
+        self,
+        kind: BetType,
+        linked_bet_id: int | None,
+    ) -> ActiveBet | None:
+        # Pass / don't-pass odds: auto-wired to the unique matching line bet.
+        # Come / don't-come odds: wired via linked_bet_id. Everything else
+        # is parentless.
         if kind in (BetType.PASS_ODDS, BetType.DONT_PASS_ODDS):
             line_kind = BetType.PASS_LINE if kind is BetType.PASS_ODDS else BetType.DONT_PASS
             line_bet = self._find_line_bet_with_point(line_kind)
-            # Validated upstream; this narrowing is for mypy.
             if line_bet is None or line_bet.point is None:
-                msg = f"no matching line bet for {kind}"
+                msg = f"no matching line bet for {kind}; _validate_placement missed this case"
                 raise RuntimeError(msg)
-            return line_bet.point
+            return line_bet
         if kind in (BetType.COME_ODDS, BetType.DONT_COME_ODDS):
             if linked_bet_id is None:
-                msg = f"{kind} requires linked_bet_id"
+                msg = f"{kind} requires linked_bet_id; _validate_placement missed this case"
                 raise RuntimeError(msg)
             linked = self._find_bet_by_id(linked_bet_id)
             if linked is None or linked.point is None:
                 msg = f"linked bet {linked_bet_id} missing or has no point"
                 raise RuntimeError(msg)
-            return linked.point
+            return linked
         return None
 
     def _reject_linked(self, kind: BetType, linked_bet_id: int | None) -> None:
@@ -340,6 +392,12 @@ class Table:
         if linked_bet_id is None:
             msg = f"{odds_kind} requires linked_bet_id"
             raise ValueError(msg)
+        # Exact-int check: booleans subclass int, and without this the
+        # engine would happily treat ``linked_bet_id=True`` as the
+        # integer 1 and attach odds to the wrong bet.
+        if type(linked_bet_id) is not int:
+            msg = f"linked_bet_id must be an int, got {type(linked_bet_id).__name__}"
+            raise TypeError(msg)
         linked = self._find_bet_by_id(linked_bet_id)
         if linked is None:
             msg = f"linked_bet_id {linked_bet_id} does not match any active bet"
@@ -350,6 +408,9 @@ class Table:
         if linked.point is None:
             msg = f"{odds_kind} requires the linked {line_kind} bet to have a point"
             raise ValueError(msg)
+        if self._find_odds_bet_for_parent(linked.bet_id) is not None:
+            msg = f"{odds_kind} is already attached to bet {linked.bet_id}"
+            raise ValueError(msg)
 
     def _find_line_bet_with_point(self, kind: BetType) -> ActiveBet | None:
         for bet in self._bets:
@@ -357,9 +418,21 @@ class Table:
                 return bet
         return None
 
+    def _find_any_bet_of_kind(self, kind: BetType) -> ActiveBet | None:
+        for bet in self._bets:
+            if bet.kind is kind:
+                return bet
+        return None
+
     def _find_bet_by_id(self, bet_id: int) -> ActiveBet | None:
         for bet in self._bets:
             if bet.bet_id == bet_id:
+                return bet
+        return None
+
+    def _find_odds_bet_for_parent(self, parent_bet_id: int) -> ActiveBet | None:
+        for bet in self._bets:
+            if bet.parent_bet_id == parent_bet_id:
                 return bet
         return None
 

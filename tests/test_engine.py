@@ -287,6 +287,144 @@ class TestPlaceBetPhaseRules:
         assert odds_bet.point == 8
 
 
+class TestPlacementUniqueness:
+    """At most one contract of each kind may be stacked at a time.
+
+    Come / don't-come are the exception: multiple are explicitly
+    allowed (they each track their own come point). Everything else
+    — pass line, don't pass, pass odds, don't-pass odds, come odds
+    behind a specific come bet — is one-at-a-time. "Add more money"
+    is the press operation, not a second :py:class:`ActiveBet`.
+    """
+
+    def test_rejects_second_pass_line(self) -> None:
+        table = Table(seed=42)
+        table.place_bet(BetType.PASS_LINE, 5)
+        with pytest.raises(ValueError, match="already active"):
+            table.place_bet(BetType.PASS_LINE, 5)
+
+    def test_rejects_second_dont_pass(self) -> None:
+        table = Table(seed=42)
+        table.place_bet(BetType.DONT_PASS, 5)
+        with pytest.raises(ValueError, match="already active"):
+            table.place_bet(BetType.DONT_PASS, 5)
+
+    def test_allows_both_pass_line_and_dont_pass_simultaneously(self) -> None:
+        table = Table(seed=42)
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.place_bet(BetType.DONT_PASS, 5)
+        kinds = {bet.kind for bet in table.active_bets}
+        assert kinds == {BetType.PASS_LINE, BetType.DONT_PASS}
+
+    def test_rejects_second_pass_odds(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.PASS_ODDS, 10)
+        with pytest.raises(ValueError, match="already attached"):
+            table.place_bet(BetType.PASS_ODDS, 10)
+
+    def test_rejects_second_dont_pass_odds(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.DONT_PASS, 5)
+        table.roll()
+        table.place_bet(BetType.DONT_PASS_ODDS, 12)
+        with pytest.raises(ValueError, match="already attached"):
+            table.place_bet(BetType.DONT_PASS_ODDS, 12)
+
+    def test_rejects_second_come_odds_on_same_parent(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        come_id = table.place_bet(BetType.COME, 5)
+        table.roll()  # travels to 8
+        table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=come_id)
+        with pytest.raises(ValueError, match="already attached"):
+            table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=come_id)
+
+    def test_allows_come_odds_on_different_parent_come_bets(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(2, 3)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        a = table.place_bet(BetType.COME, 5)
+        table.roll()  # come a → point 8
+        b = table.place_bet(BetType.COME, 5)
+        table.roll()  # come b → point 5
+        table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=a)
+        table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=b)
+        odds_parents = {
+            bet.parent_bet_id for bet in table.active_bets if bet.kind is BetType.COME_ODDS
+        }
+        assert odds_parents == {a, b}
+
+
+class TestLinkedBetIdTypeSafety:
+    """``linked_bet_id`` must be an exact ``int``: booleans are rejected.
+
+    Booleans subclass ``int`` in Python, so ``linked_bet_id=True`` would
+    otherwise silently attach an odds bet to ``bet_id == 1`` and silently
+    corrupt parentage. The same exact-type discipline :py:class:`DiceRoll`
+    applies to dice faces is enforced here.
+    """
+
+    def _table_with_travelled_come(self, come_amount: int = 5) -> tuple[Table, int]:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        come_id = table.place_bet(BetType.COME, come_amount)
+        table.roll()  # travels to 8
+        return table, come_id
+
+    @pytest.mark.parametrize("bad", [True, False, 1.0, Fraction(1, 1), "1"])
+    def test_come_odds_rejects_non_int_linked_id(self, bad: object) -> None:
+        table, _ = self._table_with_travelled_come()
+        with pytest.raises(TypeError, match="linked_bet_id must be an int"):
+            table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=bad)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("bad", [True, False, 1.0, Fraction(1, 1), "1"])
+    def test_dont_come_odds_rejects_non_int_linked_id(self, bad: object) -> None:
+        # Establish table point and a travelled don't-come bet.
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.DONT_COME, 5)
+        table.roll()
+        with pytest.raises(TypeError, match="linked_bet_id must be an int"):
+            table.place_bet(BetType.DONT_COME_ODDS, 10, linked_bet_id=bad)  # type: ignore[arg-type]
+
+
+class TestActiveBetParentField:
+    """Odds bets expose their parent bet id via ``parent_bet_id``."""
+
+    def test_pass_line_has_no_parent(self) -> None:
+        table = Table(seed=42)
+        table.place_bet(BetType.PASS_LINE, 5)
+        (bet,) = table.active_bets
+        assert bet.parent_bet_id is None
+
+    def test_pass_odds_parent_is_pass_line(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        pass_id = table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        odds_id = table.place_bet(BetType.PASS_ODDS, 10)
+        odds_bet = next(b for b in table.active_bets if b.bet_id == odds_id)
+        assert odds_bet.parent_bet_id == pass_id
+
+    def test_come_odds_parent_is_linked_come(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        come_id = table.place_bet(BetType.COME, 5)
+        table.roll()
+        odds_id = table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=come_id)
+        odds_bet = next(b for b in table.active_bets if b.bet_id == odds_id)
+        assert odds_bet.parent_bet_id == come_id
+
+
 class TestPassLineResolution:
     """Pass-line resolution across every branch."""
 

@@ -93,3 +93,24 @@ def test_rolls_negative_count_raises() -> None:
     roller = DiceRoller(seed=7)
     with pytest.raises(ValueError, match="non-negative"):
         list(roller.rolls(-1))
+
+
+# Golden sequences — first ten rolls for a handful of seeds, pinned
+# against the explicit PCG64 bit generator. Makes the "stable across
+# NumPy versions" docstring contract executable: if a future NumPy
+# silently changes PCG64's algorithm these assertions fail loudly,
+# rather than downstream simulations drifting away from the values
+# cited in notebooks and README examples.
+_GOLDEN_ROLLS: dict[int, list[tuple[int, int]]] = {
+    0: [(6, 4), (4, 2), (2, 1), (1, 1), (2, 5), (4, 6), (4, 4), (6, 5), (4, 4), (4, 6)],
+    1: [(3, 4), (5, 6), (1, 1), (5, 6), (2, 2), (6, 3), (2, 5), (2, 3), (4, 4), (1, 1)],
+    42: [(1, 5), (4, 3), (3, 6), (1, 5), (2, 1), (4, 6), (5, 5), (5, 5), (4, 1), (6, 3)],
+    0xC0DE: [(6, 2), (3, 4), (1, 5), (5, 3), (6, 5), (3, 5), (2, 6), (4, 6), (3, 6), (2, 6)],
+}
+
+
+@pytest.mark.parametrize(("seed", "expected"), list(_GOLDEN_ROLLS.items()))
+def test_roller_golden_sequence(seed: int, expected: list[tuple[int, int]]) -> None:
+    roller = DiceRoller(seed=seed)
+    actual = [(roll.die1, roll.die2) for roll in roller.rolls(len(expected))]
+    assert actual == expected

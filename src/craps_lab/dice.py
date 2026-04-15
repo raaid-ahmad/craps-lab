@@ -62,15 +62,20 @@ class DiceRoll:
 class DiceRoller:
     """A seedable, deterministic two-dice roller.
 
-    Wraps a :py:class:`numpy.random.Generator` so that each call to
-    :py:meth:`roll` consumes one uniform ``(d1, d2)`` pair in
-    ``{1, ..., 6}`` and returns a :py:class:`DiceRoll`. Seeding the
-    roller makes every downstream simulation fully reproducible — the
-    whole session graph becomes a pure function of the seed.
+    Wraps a :py:class:`numpy.random.Generator` constructed over an
+    explicitly pinned :py:class:`numpy.random.PCG64` bit generator, so
+    that each call to :py:meth:`roll` consumes one uniform ``(d1, d2)``
+    pair in ``{1, ..., 6}`` and returns a :py:class:`DiceRoll`. The
+    stream is a pure function of ``seed`` and is stable across NumPy
+    versions that keep PCG64 (which NumPy treats as a stable algorithm,
+    unlike :py:func:`numpy.random.default_rng` whose default bit
+    generator may change in future releases). A golden-sequence test
+    pins the first several rolls for a handful of seeds to make that
+    stability contract executable.
     """
 
     def __init__(self, seed: int | None = None) -> None:
-        self._rng: np.random.Generator = np.random.default_rng(seed)
+        self._rng: np.random.Generator = np.random.Generator(np.random.PCG64(seed))
 
     def roll(self) -> DiceRoll:
         """Roll two six-sided dice and return a :py:class:`DiceRoll`."""

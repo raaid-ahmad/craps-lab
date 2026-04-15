@@ -376,3 +376,52 @@ def test_dont_pass_3_4_5x_lay_composite_is_lower_than_pass_3_4_5x_composite() ->
     dp = dont_pass_plus_lay_odds_edge(LAY_3_4_5X)
     pl = pass_line_plus_odds_edge(ODDS_3_4_5X)
     assert dp < pl
+
+
+def test_pass_line_plus_odds_rejects_policy_missing_a_point() -> None:
+    # Drop point 6 — the sum would silently skip it and produce a
+    # garbage-but-plausible edge without validation.
+    bad_policy = {p: Fraction(1) for p in POINT_NUMBERS if p != 6}
+    with pytest.raises(ValueError, match="missing=\\[6\\]"):
+        pass_line_plus_odds_edge(bad_policy)
+
+
+def test_pass_line_plus_odds_rejects_policy_with_extra_key() -> None:
+    extra = dict.fromkeys(POINT_NUMBERS, Fraction(1))
+    extra[7] = Fraction(1)
+    with pytest.raises(ValueError, match="extra=\\[7\\]"):
+        pass_line_plus_odds_edge(extra)
+
+
+def test_pass_line_plus_odds_rejects_negative_multiplier() -> None:
+    bad_policy = dict.fromkeys(POINT_NUMBERS, Fraction(1))
+    bad_policy[5] = Fraction(-1)
+    with pytest.raises(ValueError, match=r"odds_policy\[5\] must be non-negative"):
+        pass_line_plus_odds_edge(bad_policy)
+
+
+def test_dont_pass_plus_lay_rejects_policy_missing_a_point() -> None:
+    bad_policy = {p: Fraction(6) for p in POINT_NUMBERS if p != 10}
+    with pytest.raises(ValueError, match="missing=\\[10\\]"):
+        dont_pass_plus_lay_odds_edge(bad_policy)
+
+
+def test_dont_pass_plus_lay_rejects_negative_multiplier() -> None:
+    bad_policy = dict.fromkeys(POINT_NUMBERS, Fraction(6))
+    bad_policy[8] = Fraction(-2)
+    with pytest.raises(ValueError, match=r"lay_policy\[8\] must be non-negative"):
+        dont_pass_plus_lay_odds_edge(bad_policy)
+
+
+def test_dont_pass_composite_edge_decreases_monotonically_with_lay() -> None:
+    # Monotonicity under a valid range of uniform lay multipliers —
+    # the don't-pass analogue of the existing pass-line monotonicity
+    # test. Validates that the edge formula is well-behaved over the
+    # whole accepted input range, not just at the canonical 6x.
+    e0 = dont_pass_plus_lay_odds_edge(uniform_odds_policy(0))
+    e1 = dont_pass_plus_lay_odds_edge(uniform_odds_policy(1))
+    e2 = dont_pass_plus_lay_odds_edge(uniform_odds_policy(2))
+    e3 = dont_pass_plus_lay_odds_edge(uniform_odds_policy(3))
+    e6 = dont_pass_plus_lay_odds_edge(uniform_odds_policy(6))
+    e10 = dont_pass_plus_lay_odds_edge(uniform_odds_policy(10))
+    assert e0 > e1 > e2 > e3 > e6 > e10

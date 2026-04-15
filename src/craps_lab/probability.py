@@ -337,6 +337,35 @@ def dont_pass_lay_odds_expected_value(point: int) -> Fraction:
     return p_win * payout + p_lose * Fraction(-1)
 
 
+def _validate_odds_policy(policy: Mapping[int, Fraction], name: str) -> None:
+    """Reject malformed odds/lay policies before they produce garbage edges.
+
+    Without this check, a policy missing a point would raise a
+    ``KeyError`` deep inside the PMF sum; a policy with a negative
+    multiplier could drive the total wagered to zero or negative and
+    make :py:func:`pass_line_plus_odds_edge` / its don't-pass sibling
+    return an edge outside ``[0, 1]`` or raise ``ZeroDivisionError``.
+    Either failure mode is "silent nonsense in, nonsense out," which
+    is a poor property for a closed-form probability API. Validating
+    up front turns those cases into an explicit ``ValueError`` at the
+    call site.
+    """
+    expected_points = frozenset(POINT_NUMBERS)
+    actual_points = frozenset(policy)
+    if actual_points != expected_points:
+        missing = sorted(expected_points - actual_points)
+        extra = sorted(actual_points - expected_points)
+        msg = (
+            f"{name} must have exactly the keys {sorted(expected_points)}; "
+            f"missing={missing}, extra={extra}"
+        )
+        raise ValueError(msg)
+    for point, multiplier in policy.items():
+        if multiplier < 0:
+            msg = f"{name}[{point}] must be non-negative, got {multiplier}"
+            raise ValueError(msg)
+
+
 ODDS_3_4_5X: Final[Mapping[int, Fraction]] = {
     4: Fraction(3),
     5: Fraction(4),
@@ -389,6 +418,7 @@ def pass_line_plus_odds_edge(odds_policy: Mapping[int, Fraction]) -> Fraction:
     This function accepts any policy, not just 3-4-5x, so exploring
     uniform 1x / 2x / 5x / 10x / 100x is a one-line substitution.
     """
+    _validate_odds_policy(odds_policy, "odds_policy")
     pmf = two_dice_sum_pmf()
     expected_odds_bet = sum(
         (pmf[p] * odds_policy[p] for p in POINT_NUMBERS),
@@ -439,6 +469,7 @@ def dont_pass_plus_lay_odds_edge(lay_policy: Mapping[int, Fraction]) -> Fraction
     vs. the 25/9 average for 3-4-5x take), which dilutes the
     already-smaller don't-pass numerator more aggressively.
     """
+    _validate_odds_policy(lay_policy, "lay_policy")
     pmf = two_dice_sum_pmf()
     expected_lay_bet = sum(
         (pmf[p] * lay_policy[p] for p in POINT_NUMBERS),

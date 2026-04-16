@@ -1111,6 +1111,100 @@ class TestDontComeOddsResolution:
         assert by_kind[BetType.DONT_COME_ODDS].payout == -12
 
 
+class TestStaleLinkedBetId:
+    """Placing odds against a bet that already resolved is rejected.
+
+    After a come bet resolves (e.g., seven-out), its ``bet_id`` is no
+    longer in the table's active-bet list. Attempting to attach odds
+    to a stale id must raise, not silently create an orphaned bet.
+    """
+
+    def test_come_odds_rejects_resolved_come_bet_id(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(1, 6)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        come_id = table.place_bet(BetType.COME, 5)
+        table.roll()  # come travels to 8
+        table.roll()  # seven-out: come bet resolves (lose)
+        # come_id is now stale — the bet is gone.
+        with pytest.raises(ValueError, match="does not match any active bet"):
+            table.place_bet(BetType.COME_ODDS, 10, linked_bet_id=come_id)
+
+    def test_dont_come_odds_rejects_resolved_dont_come_bet_id(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(3, 5)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        dc_id = table.place_bet(BetType.DONT_COME, 5)
+        table.roll()  # don't-come travels to 8
+        table.roll()  # 8 hit: don't-come resolves (lose)
+        with pytest.raises(ValueError, match="does not match any active bet"):
+            table.place_bet(BetType.DONT_COME_ODDS, 12, linked_bet_id=dc_id)
+
+
+class TestComeFamilyOddsTruncationGuard:
+    """Come-odds and don't-come-odds enforce whole-unit payouts.
+
+    The truncation guard is tested for pass-odds and lay-odds in
+    :py:class:`TestPassOddsResolution` and :py:class:`TestLayOddsResolution`.
+    Come-family odds go through a different validation path (linked-bet
+    resolution), so they need their own coverage.
+    """
+
+    @pytest.mark.parametrize(
+        ("point_dice", "bad_amount", "denom"),
+        [
+            (DiceRoll(2, 3), 3, 2),  # point 5, ratio 3:2
+            (DiceRoll(3, 3), 7, 5),  # point 6, ratio 6:5
+            (DiceRoll(4, 4), 11, 5),  # point 8, ratio 6:5
+            (DiceRoll(4, 5), 5, 2),  # point 9, ratio 3:2
+        ],
+    )
+    def test_come_odds_rejects_amounts_that_would_truncate(
+        self,
+        point_dice: DiceRoll,
+        bad_amount: int,
+        denom: int,
+    ) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(2, 2), point_dice]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 4
+        come_id = table.place_bet(BetType.COME, 5)
+        table.roll()  # come travels
+        with pytest.raises(ValueError, match=f"multiple of {denom}"):
+            table.place_bet(BetType.COME_ODDS, bad_amount, linked_bet_id=come_id)
+
+    @pytest.mark.parametrize(
+        ("point_dice", "bad_amount", "denom"),
+        [
+            (DiceRoll(2, 2), 5, 2),  # point 4, ratio 1:2
+            (DiceRoll(2, 3), 5, 3),  # point 5, ratio 2:3
+            (DiceRoll(3, 3), 7, 6),  # point 6, ratio 5:6
+            (DiceRoll(4, 4), 11, 6),  # point 8, ratio 5:6
+        ],
+    )
+    def test_dont_come_odds_rejects_amounts_that_would_truncate(
+        self,
+        point_dice: DiceRoll,
+        bad_amount: int,
+        denom: int,
+    ) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(4, 5), point_dice]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 9
+        dc_id = table.place_bet(BetType.DONT_COME, 5)
+        table.roll()  # don't-come travels
+        with pytest.raises(ValueError, match=f"multiple of {denom}"):
+            table.place_bet(BetType.DONT_COME_ODDS, bad_amount, linked_bet_id=dc_id)
+
+
 class TestEngineConvergenceVsClosedForm:
     """Monte Carlo cross-checks: engine edges match closed-form values.
 

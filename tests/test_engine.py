@@ -1165,6 +1165,165 @@ class TestDontComeOddsResolution:
         assert by_kind[BetType.DONT_COME_ODDS].payout == -12
 
 
+class TestPlaceBetPlacement:
+    """Placement validation for place bets."""
+
+    def test_place_bet_requires_point_phase(self) -> None:
+        table = Table(seed=42)
+        with pytest.raises(ValueError, match="point is established"):
+            table.place_bet(BetType.PLACE, 6, number=6)
+
+    def test_place_bet_requires_number(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        with pytest.raises(ValueError, match="requires number"):
+            table.place_bet(BetType.PLACE, 6)
+
+    def test_place_bet_rejects_non_int_number(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        with pytest.raises(TypeError, match="number must be an int"):
+            table.place_bet(BetType.PLACE, 6, number=True)
+
+    def test_place_bet_rejects_non_point_number(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        with pytest.raises(ValueError, match="must be one of"):
+            table.place_bet(BetType.PLACE, 6, number=7)
+
+    def test_place_bet_rejects_duplicate_on_same_number(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.PLACE, 6, number=6)
+        with pytest.raises(ValueError, match="already active"):
+            table.place_bet(BetType.PLACE, 6, number=6)
+
+    def test_allows_place_bets_on_different_numbers(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        table.place_bet(BetType.PLACE, 6, number=6)
+        table.place_bet(BetType.PLACE, 6, number=8)
+        place_points = {bet.point for bet in table.active_bets if bet.kind is BetType.PLACE}
+        assert place_points == {6, 8}
+
+    def test_place_bet_rejects_linked_bet_id(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        pass_id = table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        with pytest.raises(ValueError, match="does not accept linked_bet_id"):
+            table.place_bet(BetType.PLACE, 6, number=6, linked_bet_id=pass_id)
+
+    def test_non_place_bet_rejects_number(self) -> None:
+        table = Table(seed=42)
+        with pytest.raises(ValueError, match="does not accept number"):
+            table.place_bet(BetType.PASS_LINE, 5, number=6)
+
+    @pytest.mark.parametrize(
+        ("number", "bad_amount", "denom"),
+        [
+            (6, 5, 6),  # 7:6 ratio, must be multiple of 6
+            (8, 11, 6),
+            (5, 3, 5),  # 7:5 ratio, must be multiple of 5
+            (9, 7, 5),
+            (4, 3, 5),  # 9:5 ratio, must be multiple of 5
+            (10, 7, 5),
+        ],
+    )
+    def test_place_bet_rejects_amounts_that_would_truncate(
+        self,
+        number: int,
+        bad_amount: int,
+        denom: int,
+    ) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        with pytest.raises(ValueError, match=f"multiple of {denom}"):
+            table.place_bet(BetType.PLACE, bad_amount, number=number)
+
+
+class TestPlaceBetResolution:
+    """Place bet resolution: wins on number, loses on 7."""
+
+    @pytest.mark.parametrize(
+        ("number", "amount", "expected_payout"),
+        [
+            (4, 5, 9),  # 9:5
+            (5, 5, 7),  # 7:5
+            (6, 6, 7),  # 7:6
+            (8, 12, 14),  # 7:6 — $12 wins $14
+            (9, 10, 14),  # 7:5 — $10 wins $14
+            (10, 5, 9),  # 9:5
+        ],
+    )
+    def test_wins_at_place_odds(
+        self,
+        number: int,
+        amount: int,
+        expected_payout: int,
+    ) -> None:
+        d1, d2 = number // 2, number - number // 2
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(d1, d2)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        table.place_bet(BetType.PLACE, amount, number=number)
+        result = table.roll()
+        place_res = next(r for r in result.resolutions if r.kind is BetType.PLACE)
+        assert place_res.outcome is Outcome.WIN
+        assert place_res.payout == expected_payout
+
+    def test_loses_on_seven_out(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(1, 6)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        table.place_bet(BetType.PLACE, 6, number=8)
+        result = table.roll()  # seven-out
+        place_res = next(r for r in result.resolutions if r.kind is BetType.PLACE)
+        assert place_res.outcome is Outcome.LOSE
+        assert place_res.payout == -6
+
+    def test_non_resolving_roll_leaves_place_bet_unchanged(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(2, 2)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        place_id = table.place_bet(BetType.PLACE, 6, number=8)
+        result = table.roll()  # rolls 4, neither 8 nor 7
+        assert not any(r.kind is BetType.PLACE for r in result.resolutions)
+        place_bet = next(b for b in table.active_bets if b.bet_id == place_id)
+        assert place_bet.point == 8
+
+    def test_multiple_place_bets_resolve_independently(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(1, 6)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        table.place_bet(BetType.PLACE, 6, number=6)
+        table.place_bet(BetType.PLACE, 6, number=8)
+        table.place_bet(BetType.PLACE, 5, number=5)
+        result = table.roll()  # seven-out: all lose
+        place_resolutions = [r for r in result.resolutions if r.kind is BetType.PLACE]
+        assert len(place_resolutions) == 3
+        for res in place_resolutions:
+            assert res.outcome is Outcome.LOSE
+
+    def test_place_bet_on_table_point_wins_when_point_hit(self) -> None:
+        # Place bet on 6 (same as table point). Rolling 6 hits the
+        # pass-line point AND the place bet — both resolve.
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 2)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        table.place_bet(BetType.PLACE, 6, number=6)
+        result = table.roll()  # rolls 6: pass wins, place wins
+        by_kind = {res.kind: res for res in result.resolutions}
+        assert by_kind[BetType.PASS_LINE].outcome is Outcome.WIN
+        assert by_kind[BetType.PLACE].outcome is Outcome.WIN
+        assert by_kind[BetType.PLACE].payout == 7  # 7:6
+
+
 class TestStaleLinkedBetId:
     """Placing odds against a bet that already resolved is rejected.
 

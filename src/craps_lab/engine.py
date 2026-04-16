@@ -39,6 +39,7 @@ from craps_lab.bets import (
     PASS_LINE_CRAPS_LOSERS,
     PASS_LINE_NATURAL_WINNERS,
     PASS_ODDS_PAYOUT_RATIO,
+    PLACE_PAYOUT_RATIO,
     POINT_NUMBERS,
     SEVEN,
     BetType,
@@ -77,27 +78,22 @@ def _reject_non_positive_field(value: int, name: str) -> None:
         raise ValueError(msg)
 
 
-def _validate_odds_amount(kind: BetType, amount: int, point: int) -> None:
-    """Reject odds wagers that would not pay a whole-dollar win.
+def _validate_wager_amount(kind: BetType, amount: int, point: int) -> None:
+    """Reject wagers that would not pay a whole-dollar win.
 
-    Casinos only accept odds bets in amounts that pay out an integer
-    number of chips at the true-odds ratio: an amount on a $5 pass-
-    line must be a multiple of 5 behind point 6/8 (6:5), a multiple
-    of 2 behind point 5/9 (3:2), and any amount behind point 4/10
-    (2:1). Lay odds use the inverse ratios (a multiple of 6 behind
-    point 6/8, etc.). An amount that does not satisfy this rule
-    would either silently truncate the player's winnings or force a
-    fractional chip — both are casino-floor impossibilities and
-    both corrupt the engine's zero-EV guarantee for free odds.
-
-    Raising here rather than rounding means :py:func:`_step_take_odds`
-    and :py:func:`_step_lay_odds` can rely on integer division being
-    exact.
+    Any bet whose payout is computed as ``(amount * numerator) //
+    denominator`` must have an ``amount`` that is a multiple of the
+    ratio's denominator. This covers free-odds bets (true-odds
+    ratios), place bets (sub-true-odds ratios), and any future bet
+    kind whose payout is a non-trivial rational multiple of the
+    wager.
     """
     if kind in _TAKE_ODDS_FAMILY:
         ratio = PASS_ODDS_PAYOUT_RATIO[point]
     elif kind in _LAY_ODDS_FAMILY:
         ratio = DONT_PASS_LAY_PAYOUT_RATIO[point]
+    elif kind is BetType.PLACE:
+        ratio = PLACE_PAYOUT_RATIO[point]
     else:
         return
     denom = ratio.denominator
@@ -262,6 +258,7 @@ class Table:
         amount: int,
         *,
         linked_bet_id: int | None = None,
+        number: int | None = None,
     ) -> int:
         """Place a bet of the given kind and amount; return its ``bet_id``.
 
@@ -282,15 +279,17 @@ class Table:
           must be an exact ``int``, must reference an active come /
           don't-come bet that has established its own point, and
           must not already have an odds bet attached.
+        * Place: point phase, ``number`` required (must be a point
+          number). At most one place bet per number.
         """
         if type(kind) is not BetType:
             msg = f"kind must be a BetType, got {type(kind).__name__}"
             raise TypeError(msg)
-        self._validate_placement(kind, linked_bet_id)
-        bet_point = self._resolve_bet_point(kind, linked_bet_id)
+        self._validate_placement(kind, linked_bet_id, number)
+        bet_point = self._resolve_bet_point(kind, linked_bet_id, number)
         parent_bet_id = self._resolve_parent_bet_id(kind, linked_bet_id)
-        if bet_point is not None and kind in _TAKE_ODDS_FAMILY | _LAY_ODDS_FAMILY:
-            _validate_odds_amount(kind, amount, bet_point)
+        if bet_point is not None:
+            _validate_wager_amount(kind, amount, bet_point)
         bet = ActiveBet(
             bet_id=self._next_bet_id,
             kind=kind,
@@ -342,18 +341,30 @@ class Table:
             travelled=tuple(travelled),
         )
 
-    def _validate_placement(self, kind: BetType, linked_bet_id: int | None) -> None:
+    def _validate_placement(
+        self,
+        kind: BetType,
+        linked_bet_id: int | None,
+        number: int | None = None,
+    ) -> None:
         if kind in _LINE_BETS:
             self._validate_line_bet(kind, linked_bet_id)
+            self._reject_number(kind, number)
             return
         if kind in (BetType.PASS_ODDS, BetType.DONT_PASS_ODDS):
             self._validate_line_odds(kind, linked_bet_id)
+            self._reject_number(kind, number)
             return
         if kind is BetType.COME_ODDS:
             self._require_linked_bet_with_point(kind, linked_bet_id, BetType.COME)
+            self._reject_number(kind, number)
             return
         if kind is BetType.DONT_COME_ODDS:
             self._require_linked_bet_with_point(kind, linked_bet_id, BetType.DONT_COME)
+            self._reject_number(kind, number)
+            return
+        if kind is BetType.PLACE:
+            self._validate_place_bet(linked_bet_id, number)
             return
         msg = f"engine does not yet support placing bet of kind {kind}"
         raise NotImplementedError(msg)
@@ -381,10 +392,14 @@ class Table:
             msg = f"{kind} is already attached to bet {line_bet.bet_id}"
             raise ValueError(msg)
 
-    def _resolve_bet_point(self, kind: BetType, linked_bet_id: int | None) -> int | None:
-        # Odds bets inherit their point at placement time, from either the
-        # unique line bet (pass / don't-pass odds) or the linked come bet
-        # (come / don't-come odds). Everything else starts without a point.
+    def _resolve_bet_point(
+        self,
+        kind: BetType,
+        linked_bet_id: int | None,
+        number: int | None = None,
+    ) -> int | None:
+        if kind is BetType.PLACE:
+            return number
         parent = self._resolve_parent_bet(kind, linked_bet_id)
         if parent is None:
             return None
@@ -492,6 +507,34 @@ class Table:
                 return bet
         return None
 
+    def _validate_place_bet(self, linked_bet_id: int | None, number: int | None) -> None:
+        self._reject_linked(BetType.PLACE, linked_bet_id)
+        self._require_point_phase(BetType.PLACE)
+        if number is None:
+            msg = "place bet requires number"
+            raise ValueError(msg)
+        if type(number) is not int:
+            msg = f"number must be an int, got {type(number).__name__}"
+            raise TypeError(msg)
+        if number not in POINT_NUMBERS:
+            msg = f"number must be one of {POINT_NUMBERS}, got {number}"
+            raise ValueError(msg)
+        if self._find_place_bet_on_number(number) is not None:
+            msg = f"a place bet on {number} is already active"
+            raise ValueError(msg)
+
+    def _find_place_bet_on_number(self, number: int) -> ActiveBet | None:
+        for bet in self._bets:
+            if bet.kind is BetType.PLACE and bet.point == number:
+                return bet
+        return None
+
+    @staticmethod
+    def _reject_number(kind: BetType, number: int | None) -> None:
+        if number is not None:
+            msg = f"{kind} does not accept number"
+            raise ValueError(msg)
+
 
 def _step_bet(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
     if bet.kind in _PASS_FAMILY:
@@ -502,6 +545,8 @@ def _step_bet(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
         return _step_take_odds(bet, total)
     if bet.kind in _LAY_ODDS_FAMILY:
         return _step_lay_odds(bet, total)
+    if bet.kind is BetType.PLACE:
+        return _step_place(bet, total)
     msg = f"engine cannot yet resolve bet kind {bet.kind}"
     raise NotImplementedError(msg)
 
@@ -569,7 +614,7 @@ def _step_take_odds(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
         return _resolve(bet, Outcome.LOSE, -bet.amount)
     if total == bet.point:
         ratio = PASS_ODDS_PAYOUT_RATIO[bet.point]
-        # Exact integer arithmetic: `_validate_odds_amount` rejects any
+        # Exact integer arithmetic: `_validate_wager_amount` rejects any
         # wager that is not a multiple of `ratio.denominator`, so this
         # division has no truncation.
         payout = (bet.amount * ratio.numerator) // ratio.denominator
@@ -588,6 +633,19 @@ def _step_lay_odds(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
         return _resolve(bet, Outcome.WIN, payout)
     if total == bet.point:
         return _resolve(bet, Outcome.LOSE, -bet.amount)
+    return bet
+
+
+def _step_place(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    if bet.point is None:
+        msg = f"place bet {bet.bet_id} has no point; engine invariant violated"
+        raise RuntimeError(msg)
+    if total == SEVEN:
+        return _resolve(bet, Outcome.LOSE, -bet.amount)
+    if total == bet.point:
+        ratio = PLACE_PAYOUT_RATIO[bet.point]
+        payout = (bet.amount * ratio.numerator) // ratio.denominator
+        return _resolve(bet, Outcome.WIN, payout)
     return bet
 
 

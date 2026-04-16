@@ -192,6 +192,65 @@ class IronCross(Strategy):
         return actions
 
 
+_TARGET_COME_BETS = 2
+
+
+class ThreePointMolly(Strategy):
+    """Pass line + two come bets, all with odds.
+
+    Maintains three working points with odds behind each:
+    one pass-line point and two come-bet points. When a come
+    bet wins (point hit) or seven-out clears the table, the
+    strategy rebuilds toward three points on subsequent rolls.
+    """
+
+    def __init__(
+        self,
+        line_amount: int = 5,
+        odds_multiplier: dict[int, int] | None = None,
+    ) -> None:
+        self._line = line_amount
+        self._odds = odds_multiplier or _DEFAULT_3_4_5X
+
+    def get_actions(self, ctx: Context) -> Sequence[BetAction]:
+        actions: list[BetAction] = []
+        has_pass = any(b.kind is BetType.PASS_LINE for b in ctx.active_bets)
+        has_pass_odds = any(b.kind is BetType.PASS_ODDS for b in ctx.active_bets)
+
+        if ctx.point is None and not has_pass:
+            actions.append(BetAction.place(BetType.PASS_LINE, self._line))
+            return actions
+
+        if ctx.point is None:
+            return actions
+
+        if has_pass and not has_pass_odds:
+            actions.append(BetAction.place(BetType.PASS_ODDS, self._line * self._odds[ctx.point]))
+
+        if ctx.last_resolution is not None:
+            for bet in ctx.last_resolution.travelled:
+                if bet.kind is BetType.COME and bet.point is not None:
+                    has_odds = any(b.parent_bet_id == bet.bet_id for b in ctx.active_bets)
+                    if not has_odds:
+                        actions.append(
+                            BetAction.place(
+                                BetType.COME_ODDS,
+                                self._line * self._odds[bet.point],
+                                linked_bet_id=bet.bet_id,
+                            )
+                        )
+
+        come_with_point = sum(
+            1 for b in ctx.active_bets if b.kind is BetType.COME and b.point is not None
+        )
+        come_without_point = sum(
+            1 for b in ctx.active_bets if b.kind is BetType.COME and b.point is None
+        )
+        if come_with_point + come_without_point < _TARGET_COME_BETS:
+            actions.append(BetAction.place(BetType.COME, self._line))
+        return actions
+
+
 def run_strategy(
     strategy: Strategy,
     table: Table,

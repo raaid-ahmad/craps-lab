@@ -17,6 +17,7 @@ from craps_lab.strategy import (
     IronCross,
     PassLineWithOdds,
     Strategy,
+    ThreePointMolly,
     run_strategy,
 )
 
@@ -242,3 +243,72 @@ class TestIronCross:
         # Seven-out on roll 3: all bets lose.
         assert table.active_bets == ()
         assert all(r.payout < 0 for r in results[2].resolutions if r.kind is not BetType.FIELD)
+
+
+class TestThreePointMolly:
+    """ThreePointMolly: pass line + 2 come bets, all with odds."""
+
+    def test_builds_toward_three_points(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [
+                    DiceRoll(3, 3),  # come-out 6: point
+                    DiceRoll(4, 4),  # come A travels to 8
+                    DiceRoll(2, 3),  # come B travels to 5
+                    DiceRoll(2, 2),  # indifferent roll 4
+                ]
+            )
+        )
+        run_strategy(ThreePointMolly(), table, max_rolls=4)
+        kinds = {b.kind for b in table.active_bets}
+        assert BetType.PASS_LINE in kinds
+        assert BetType.PASS_ODDS in kinds
+        assert BetType.COME in kinds
+        assert BetType.COME_ODDS in kinds
+        come_bets = [b for b in table.active_bets if b.kind is BetType.COME]
+        assert len(come_bets) == 2
+
+    def test_places_come_odds_after_travel(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [
+                    DiceRoll(3, 3),  # point 6
+                    DiceRoll(4, 4),  # come travels to 8
+                    DiceRoll(2, 2),  # indifferent (come B placed, odds on A)
+                ]
+            )
+        )
+        run_strategy(ThreePointMolly(), table, max_rolls=3)
+        come_odds = [b for b in table.active_bets if b.kind is BetType.COME_ODDS]
+        assert len(come_odds) == 1
+        assert come_odds[0].point == 8
+
+    def test_replaces_come_bet_after_win(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [
+                    DiceRoll(3, 3),  # point 6
+                    DiceRoll(4, 4),  # come A → 8
+                    DiceRoll(2, 3),  # come B → 5; odds on A
+                    DiceRoll(3, 5),  # 8 hit: come A wins; odds on B
+                    DiceRoll(2, 2),  # new come C placed
+                ]
+            )
+        )
+        run_strategy(ThreePointMolly(), table, max_rolls=5)
+        come_bets = [b for b in table.active_bets if b.kind is BetType.COME]
+        assert len(come_bets) >= 1
+
+    def test_seven_out_and_restart(self) -> None:
+        table = Table(
+            roller=ScriptedRoller(
+                [
+                    DiceRoll(3, 3),  # point 6
+                    DiceRoll(4, 4),  # come A → 8
+                    DiceRoll(1, 6),  # seven-out
+                    DiceRoll(2, 2),  # new come-out: pass line placed, point 4
+                ]
+            )
+        )
+        run_strategy(ThreePointMolly(), table, max_rolls=4)
+        assert any(b.kind is BetType.PASS_LINE for b in table.active_bets)

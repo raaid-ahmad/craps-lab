@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "craps-lab"
 version = "0.0.0"
-description = "Define, simulate, and compare craps betting strategies under realistic session conditions — on a probability-first engine."
+description = "See what your craps strategy actually does to your bankroll — run it through thousands of sessions and compare the results."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
@@ -15,11 +15,11 @@ authors = [
 keywords = [
     "craps",
     "strategy",
-    "simulation",
+    "simulator",
+    "bankroll",
     "monte-carlo",
-    "probability",
-    "statistics",
     "gambling",
+    "casino",
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",

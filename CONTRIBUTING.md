@@ -1,7 +1,8 @@
 # Contributing to craps-lab
 
-Thanks for taking a look. This repository is a deliberate commit-by-commit
-build-up of a craps simulator focused on probability and statistics. The
+Thanks for taking a look. craps-lab is a practical craps strategy simulator —
+the engine is built on exact math so the results are trustworthy, but the
+goal is useful visual output, not academic rigor for its own sake. The
 standards below apply to any contribution — and to the author.
 
 ## Development setup

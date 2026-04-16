@@ -6,27 +6,20 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
 
-> A craps strategy simulator: define a betting strategy, run it across thousands of realistic sessions, and see the actual distribution of what you'd take home — not just the house edge.
+> See what your craps strategy actually does to your bankroll — before you bring it to the table.
 
-## Why craps-lab?
+## What this is
 
-Most craps tools answer *what* the house edge is. They rarely answer the questions a player actually cares about: *if I play this strategy for four hours tonight starting with $500, how often do I go home up $200? How often do I bust? How deep do my drawdowns get along the way?*
+Most craps resources tell you the house edge on each bet. That's useful, but it doesn't answer the questions you actually have: *if I play Iron Cross for four hours with $500, how often do I walk away up? How often do I bust? How bad do the drawdowns get?*
 
-craps-lab treats the simulator as the primary product and the probability engine as the foundation it stands on:
+craps-lab lets you define a strategy in Python, run it through thousands of realistic sessions, and see the distribution of outcomes — not just the theoretical edge, but the practical shape of what happens to your money.
 
-- **Define a strategy** as a Python class — including conditional logic like "press after two hits" or "regress on win."
-- **Run it through realistic sessions** — bankroll, hours at a user-set pace (default ~100 rolls/hr), stop-win, stop-loss, target, number of sessions.
-- **Compare strategies** head-to-head on the same seed — P&L distribution, risk of ruin, drawdowns, hit-target rate, expected time played.
-- **Explore interactively** via a Streamlit UI, or batch from a Typer CLI.
+- **Define a strategy** — conditional logic like "press after two hits" or "regress on the first win."
+- **Run realistic sessions** — bankroll, hours of play, stop-win, stop-loss.
+- **Compare head-to-head** — same dice sequence, different strategies, clear winner.
+- **Explore visually** — P&L distributions, drawdown charts, risk-of-ruin curves.
 
-Under the hood sits a probability-first engine built commit-by-commit to be trustworthy:
-
-- Every bet type ships with a closed-form derivation of its expected value in the module docstring.
-- Every Monte Carlo result is cross-checked against the analytical answer, and the convergence rate itself is a tested property.
-- Every math artifact — the dice PMF, shooter-length distribution, gambler's ruin — has a companion Jupyter notebook.
-- Strict type checking, property-based tests on the state machine, 100% deterministic under seed, zero magic numbers without a source.
-
-The simulator's answers are only as trustworthy as the engine underneath it; this one is built to be trusted.
+The engine underneath is built on exact probability math so the simulator's answers are trustworthy, but the point of the project is the practical output, not the math itself.
 
 ## Quickstart
 
@@ -44,11 +37,21 @@ craps-lab compare --strategies pass-line-with-odds,iron-cross \
 streamlit run app/streamlit_app.py
 ```
 
-*These commands land in Phases 8–9 of the roadmap — see status below.*
+*CLI and UI are coming — see the roadmap below.*
+
+## Built-in strategies
+
+| Strategy | What it does |
+|----------|-------------|
+| **Pass Line with Odds** | Pass line on come-out, 3-4-5x odds behind the point. The textbook low-edge play. |
+| **Iron Cross** | Field + place 5/6/8. Wins on every number except 7. Feels great until it doesn't. |
+| **Three Point Molly** | Pass line + two come bets, all with max odds. Three points working at all times. |
+
+Write your own by subclassing `Strategy` and implementing `get_actions()`.
 
 ## Status
 
-Early development. The probability engine and line-bet derivations are done; the multi-bet engine, strategy layer, session runner, CLI, and UI are being built atomic-commit-by-atomic-commit on top. `main` is always green. The commit history *is* the story — each commit is a small, atomic step.
+The engine and strategy layer are built. The session runner, CLI, and visual reporting are next. `main` is always green.
 
 ## Roadmap
 
@@ -56,15 +59,14 @@ Early development. The probability engine and line-bet derivations are done; the
 |-------|------------|
 | ✅ 0 — Scaffolding | `pyproject.toml`, ruff, mypy (strict), pytest, pre-commit, GitHub Actions |
 | ✅ 1 — Dice primitives | Seeded RNG wrapper, 2d6 sum PMF, convergence tests, notebook |
-| ✅ 2 — Bets & closed-form edges | Line bets, come bets, free odds; derivations in docstrings and notebooks |
-| 🛠 3 — Multi-bet engine | Table state machine with per-roll resolution of multiple simultaneous bets |
-| 🛠 4 — Strategy layer | `Strategy` base class, `Context` / `BetAction` primitives, and presets (PassLineWithOdds, IronCross, ThreePointMolly, ...) |
-| 🛠 5 — Session runner | Bankroll tracking, stop rules, real-world time parameterization, equity curves, drawdown tracking |
+| ✅ 2 — Bets & edges | Line bets, come bets, place bets, field, free odds; closed-form house edges |
+| ✅ 3 — Multi-bet engine | Table state machine: per-roll resolution of multiple simultaneous bets |
+| ✅ 4 — Strategy layer | `Strategy` base class, `BetAction` / `Context` primitives, three presets |
+| 🛠 5 — Session runner | Bankroll tracking, stop rules, real-world time parameterization, equity curves |
 | 🛠 6 — Campaign runner | Many sessions aggregated; head-to-head strategy comparison on a shared seed |
-| 🛠 7 — Reporting | Risk of ruin, hit-target rate, drawdown distribution, P&L histograms, matplotlib figures |
+| 🛠 7 — Reporting | Risk of ruin, hit-target rate, drawdown distribution, P&L histograms |
 | 🛠 8 — CLI | Typer-based `run` / `compare` / `list-presets` with rich table output |
-| 🛠 9 — Streamlit UI | Config inputs, strategy picker, results tabs |
-| 🕒 Later | Shooter-length Markov chain, closed-form gambler's ruin, variance decomposition |
+| 🛠 9 — Streamlit UI | Interactive strategy picker, session config, results dashboard |
 
 ## Development
 
@@ -81,7 +83,7 @@ pre-commit install
 
 ### Quality gates
 
-Every commit lands on a green build. The full pipeline, run locally:
+Every commit lands on a green build:
 
 ```bash
 ruff check .
@@ -90,11 +92,9 @@ mypy src tests
 pytest
 ```
 
-Pre-commit runs ruff, ruff-format, mypy, and the standard whitespace / YAML / TOML checks automatically on every commit.
-
 ### Notebooks
 
-Math derivations and visualizations live in `notebooks/`. They are companions to the code, not a replacement for it.
+Math derivations and visualizations live in `notebooks/`. They back up the engine — not the other way around.
 
 ## License
 

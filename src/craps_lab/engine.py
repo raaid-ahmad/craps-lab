@@ -19,7 +19,7 @@ The module exposes four types:
   before and after, and every bet that changed state on this roll.
 * :py:class:`Table` — the state machine itself.
 
-This commit completes the line-bet family: pass line / come bets
+The module covers the full line-bet family: pass line / come bets
 share a resolver (both track their state through their own
 ``point`` field, not the table point), and so do don't-pass /
 don't-come. Take-odds (pass odds, come odds) and lay-odds

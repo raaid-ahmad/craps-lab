@@ -39,8 +39,9 @@ class Outcome(StrEnum):
 class BetType(StrEnum):
     """Enumerated bet kinds supported by craps-lab.
 
-    New variants are added as subsequent phases introduce more bets;
-    for now the project covers the two line bets.
+    Covers the line-bet family (pass line, don't pass, come, don't
+    come) and their associated odds bets. New variants are added as
+    subsequent phases introduce more bets.
     """
 
     PASS_LINE = "pass_line"  # noqa: S105 -- StrEnum value, not a password

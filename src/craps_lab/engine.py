@@ -36,6 +36,8 @@ from craps_lab.bets import (
     DONT_PASS_COME_OUT_LOSES,
     DONT_PASS_COME_OUT_WINS,
     DONT_PASS_LAY_PAYOUT_RATIO,
+    FIELD_PAYOUT_MULTIPLIER,
+    FIELD_WINNERS,
     PASS_LINE_CRAPS_LOSERS,
     PASS_LINE_NATURAL_WINNERS,
     PASS_ODDS_PAYOUT_RATIO,
@@ -366,6 +368,10 @@ class Table:
         if kind is BetType.PLACE:
             self._validate_place_bet(linked_bet_id, number)
             return
+        if kind is BetType.FIELD:
+            self._reject_linked(kind, linked_bet_id)
+            self._reject_number(kind, number)
+            return
         msg = f"engine does not yet support placing bet of kind {kind}"
         raise NotImplementedError(msg)
 
@@ -547,6 +553,8 @@ def _step_bet(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
         return _step_lay_odds(bet, total)
     if bet.kind is BetType.PLACE:
         return _step_place(bet, total)
+    if bet.kind is BetType.FIELD:
+        return _step_field(bet, total)
     msg = f"engine cannot yet resolve bet kind {bet.kind}"
     raise NotImplementedError(msg)
 
@@ -647,6 +655,13 @@ def _step_place(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
         payout = (bet.amount * ratio.numerator) // ratio.denominator
         return _resolve(bet, Outcome.WIN, payout)
     return bet
+
+
+def _step_field(bet: ActiveBet, total: int) -> BetResolution | ActiveBet:
+    if total in FIELD_WINNERS:
+        multiplier = FIELD_PAYOUT_MULTIPLIER[total]
+        return _resolve(bet, Outcome.WIN, bet.amount * multiplier)
+    return _resolve(bet, Outcome.LOSE, -bet.amount)
 
 
 def _resolve(bet: ActiveBet, outcome: Outcome, payout: int) -> BetResolution:

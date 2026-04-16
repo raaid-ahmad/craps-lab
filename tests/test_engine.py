@@ -1324,6 +1324,98 @@ class TestPlaceBetResolution:
         assert by_kind[BetType.PLACE].payout == 7  # 7:6
 
 
+class TestFieldBetPlacement:
+    """Field bets can be placed in either phase."""
+
+    def test_field_allowed_during_come_out(self) -> None:
+        table = Table(seed=42)
+        bet_id = table.place_bet(BetType.FIELD, 5)
+        assert bet_id > 0
+
+    def test_field_allowed_during_point_phase(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        bet_id = table.place_bet(BetType.FIELD, 5)
+        assert bet_id > 0
+
+    def test_field_rejects_linked_bet_id(self) -> None:
+        table = Table(seed=42)
+        with pytest.raises(ValueError, match="does not accept linked_bet_id"):
+            table.place_bet(BetType.FIELD, 5, linked_bet_id=1)
+
+    def test_field_rejects_number(self) -> None:
+        table = Table(seed=42)
+        with pytest.raises(ValueError, match="does not accept number"):
+            table.place_bet(BetType.FIELD, 5, number=6)
+
+
+class TestFieldBetResolution:
+    """Field bet resolves on every roll — no carry-over."""
+
+    @pytest.mark.parametrize(
+        ("d1", "d2", "expected_multiplier"),
+        [
+            (1, 1, 2),  # sum 2: double
+            (1, 2, 1),  # sum 3
+            (2, 2, 1),  # sum 4
+            (4, 5, 1),  # sum 9
+            (5, 5, 1),  # sum 10
+            (6, 5, 1),  # sum 11
+            (6, 6, 3),  # sum 12: triple
+        ],
+    )
+    def test_field_wins_on_field_numbers(
+        self,
+        d1: int,
+        d2: int,
+        expected_multiplier: int,
+    ) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(d1, d2)]))
+        table.place_bet(BetType.FIELD, 5)
+        result = table.roll()
+        (res,) = result.resolutions
+        assert res.kind is BetType.FIELD
+        assert res.outcome is Outcome.WIN
+        assert res.payout == 5 * expected_multiplier
+
+    @pytest.mark.parametrize(
+        ("d1", "d2"),
+        [
+            (2, 3),  # sum 5
+            (3, 3),  # sum 6
+            (3, 4),  # sum 7
+            (4, 4),  # sum 8
+        ],
+    )
+    def test_field_loses_on_non_field_numbers(self, d1: int, d2: int) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(d1, d2)]))
+        table.place_bet(BetType.FIELD, 5)
+        result = table.roll()
+        (res,) = result.resolutions
+        assert res.kind is BetType.FIELD
+        assert res.outcome is Outcome.LOSE
+        assert res.payout == -5
+
+    def test_field_resolves_every_roll_not_carried_over(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(4, 5)]))
+        table.place_bet(BetType.FIELD, 5)
+        table.roll()
+        assert table.active_bets == ()
+
+    def test_field_coexists_with_line_bets(self) -> None:
+        # Field bet + pass line on a come-out 7: both resolve.
+        # Pass wins (natural), field wins (7 loses field — actually
+        # 7 is a field loser).
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 4)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.place_bet(BetType.FIELD, 5)
+        result = table.roll()
+        by_kind = {res.kind: res for res in result.resolutions}
+        assert by_kind[BetType.PASS_LINE].outcome is Outcome.WIN
+        assert by_kind[BetType.FIELD].outcome is Outcome.LOSE
+
+
 class TestStaleLinkedBetId:
     """Placing odds against a bet that already resolved is rejected.
 

@@ -53,6 +53,7 @@ class BetType(StrEnum):
     COME_ODDS = "come_odds"
     DONT_COME_ODDS = "dont_come_odds"
     PLACE = "place"
+    FIELD = "field"
 
 
 SEVEN: Final = 7
@@ -151,4 +152,27 @@ are 2:1, the place payout is 9:5 (house edge ~6.67%).
 
 The denominator determines the minimum valid wager: place 6/8
 must be a multiple of 6, place 5/9/4/10 must be a multiple of 5.
+"""
+
+FIELD_WINNERS: Final[frozenset[int]] = frozenset({2, 3, 4, 9, 10, 11, 12})
+"""Sums that win the field bet."""
+
+FIELD_LOSERS: Final[frozenset[int]] = frozenset({5, 6, 7, 8})
+"""Sums that lose the field bet."""
+
+FIELD_PAYOUT_MULTIPLIER: Final[Mapping[int, int]] = {
+    2: 2,
+    3: 1,
+    4: 1,
+    9: 1,
+    10: 1,
+    11: 1,
+    12: 3,
+}
+"""Payout multiplier per winning field-bet sum.
+
+Most field winners pay 1:1. The 2 pays double (2:1) and the 12
+pays triple (3:1) under the standard "double-and-triple" table
+rule. Some casinos pay 2:1 on 12 instead — the engine uses the
+more common 3:1 variant, which yields a house edge of ~2.78%.
 """

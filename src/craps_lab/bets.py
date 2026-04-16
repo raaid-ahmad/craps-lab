@@ -52,6 +52,7 @@ class BetType(StrEnum):
     DONT_PASS_ODDS = "dont_pass_odds"  # noqa: S105 -- StrEnum value, not a password
     COME_ODDS = "come_odds"
     DONT_COME_ODDS = "dont_come_odds"
+    PLACE = "place"
 
 
 SEVEN: Final = 7
@@ -130,4 +131,24 @@ here are the reciprocals of :py:data:`PASS_ODDS_PAYOUT_RATIO`, so
 a $2 lay on point 4 wins $1 and a $6 lay on point 6 wins $5. The
 expected value is exactly zero, identical to take-odds, because
 lay and take are two sides of the same fair wager.
+"""
+
+PLACE_PAYOUT_RATIO: Final[Mapping[int, Fraction]] = {
+    4: Fraction(9, 5),
+    5: Fraction(7, 5),
+    6: Fraction(7, 6),
+    8: Fraction(7, 6),
+    9: Fraction(7, 5),
+    10: Fraction(9, 5),
+}
+"""Payout ratio per $1 place-bet wager, per number.
+
+Place bets pay less than true odds — the gap is the house edge.
+On point 6 or 8, where true odds are 6:5, the place payout is 7:6
+(house edge ~1.52%). On 5 or 9, where true odds are 3:2, the
+place payout is 7:5 (house edge 4%). On 4 or 10, where true odds
+are 2:1, the place payout is 9:5 (house edge ~6.67%).
+
+The denominator determines the minimum valid wager: place 6/8
+must be a multiple of 6, place 5/9/4/10 must be a multiple of 5.
 """

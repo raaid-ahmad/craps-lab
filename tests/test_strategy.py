@@ -14,6 +14,7 @@ from craps_lab.strategy import (
     ActionType,
     BetAction,
     Context,
+    IronCross,
     PassLineWithOdds,
     Strategy,
     run_strategy,
@@ -202,3 +203,42 @@ class TestPassLineWithOdds:
         # 5-sigma tolerance on the edge estimate.
         sem = 1.0 / (len(results) ** 0.5)
         assert abs(empirical_edge - expected_edge) < 5 * sem
+
+
+class TestIronCross:
+    """IronCross: pass line + place 5/6/8 + field every roll."""
+
+    def test_places_pass_line_on_come_out(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        run_strategy(IronCross(), table, max_rolls=1)
+        assert any(b.kind is BetType.PASS_LINE for b in table.active_bets)
+
+    def test_spreads_iron_cross_on_point_phase(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 5)]))
+        results = run_strategy(IronCross(), table, max_rolls=2)
+        # After roll 2 (point phase), place bets on 5/6/8 + field resolved.
+        place_points = {b.point for b in table.active_bets if b.kind is BetType.PLACE}
+        assert place_points == {5, 6, 8}
+        # Field resolved on roll 2 (sum 9 = field winner).
+        field_res = [r for r in results[1].resolutions if r.kind is BetType.FIELD]
+        assert len(field_res) == 1
+
+    def test_field_replaces_every_roll(self) -> None:
+        # Two point-phase rolls: field should be placed and resolved both times.
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 5), DiceRoll(2, 2)]))
+        results = run_strategy(IronCross(), table, max_rolls=3)
+        for res in results[1:]:
+            assert any(r.kind is BetType.FIELD for r in res.resolutions)
+
+    def test_does_not_duplicate_place_bets(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 5), DiceRoll(2, 2)]))
+        run_strategy(IronCross(), table, max_rolls=3)
+        place_bets = [b for b in table.active_bets if b.kind is BetType.PLACE]
+        assert len(place_bets) == 3
+
+    def test_seven_out_clears_everything(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(4, 5), DiceRoll(1, 6)]))
+        results = run_strategy(IronCross(), table, max_rolls=3)
+        # Seven-out on roll 3: all bets lose.
+        assert table.active_bets == ()
+        assert all(r.payout < 0 for r in results[2].resolutions if r.kind is not BetType.FIELD)

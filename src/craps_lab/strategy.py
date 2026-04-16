@@ -154,6 +154,44 @@ class PassLineWithOdds(Strategy):
         return actions
 
 
+class IronCross(Strategy):
+    """Field + place 5, 6, 8: covers every number except 7.
+
+    Come-out: place a pass-line bet to get into point phase.
+    Point phase: place 5/6/8 (if not already active) and re-place
+    the field bet before every roll (field resolves each roll).
+    """
+
+    def __init__(
+        self,
+        line_amount: int = 5,
+        place_inside: int = 6,
+        place_outside: int = 5,
+        field_amount: int = 5,
+    ) -> None:
+        self._line = line_amount
+        self._place_inside = place_inside
+        self._place_outside = place_outside
+        self._field = field_amount
+
+    def get_actions(self, ctx: Context) -> Sequence[BetAction]:
+        actions: list[BetAction] = []
+        has_pass = any(b.kind is BetType.PASS_LINE for b in ctx.active_bets)
+
+        if ctx.point is None and not has_pass:
+            actions.append(BetAction.place(BetType.PASS_LINE, self._line))
+            return actions
+
+        if ctx.point is not None:
+            placed = {b.point for b in ctx.active_bets if b.kind is BetType.PLACE}
+            for number in (5, 6, 8):
+                if number not in placed:
+                    amt = self._place_inside if number in (6, 8) else self._place_outside
+                    actions.append(BetAction.place(BetType.PLACE, amt, number=number))
+            actions.append(BetAction.place(BetType.FIELD, self._field))
+        return actions
+
+
 def run_strategy(
     strategy: Strategy,
     table: Table,

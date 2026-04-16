@@ -855,6 +855,60 @@ class TestDontComeBetResolution:
         assert dc_res.outcome is Outcome.WIN
         assert dc_res.payout == 5
 
+    def test_dont_pass_wins_and_fresh_dont_come_travels_on_same_roll(self) -> None:
+        # Mirror of TestComeBetResolution.test_pass_line_wins_and_fresh_come_travels.
+        # Table point is 6, shooter rolls 6: don't-pass LOSES (point hit),
+        # while the fresh don't-come (on its own come-out) TRAVELS to 6.
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 2)],  # come-out 6, then 6
+            )
+        )
+        table.place_bet(BetType.DONT_PASS, 5)
+        table.roll()  # point 6
+        dc_id = table.place_bet(BetType.DONT_COME, 5)
+        result = table.roll()  # 6 → dont-pass loses, dont-come travels
+
+        dp_res = next(r for r in result.resolutions if r.kind is BetType.DONT_PASS)
+        assert dp_res.outcome is Outcome.LOSE
+        assert dp_res.payout == -5
+
+        assert not any(r.kind is BetType.DONT_COME for r in result.resolutions)
+        (travelled,) = result.travelled
+        assert travelled.bet_id == dc_id
+        assert travelled.point == 6
+
+        assert result.point_before == 6
+        assert result.point_after is None
+
+        (remaining,) = table.active_bets
+        assert remaining.bet_id == dc_id
+        assert remaining.point == 6
+
+    def test_fresh_dont_come_on_seven_loses_while_travelled_wins(self) -> None:
+        # Mirror of TestComeBetResolution.test_fresh_come_on_seven_is_a_natural_win.
+        # A fresh don't-come is on its own come-out: 7 LOSES (7/11 lose
+        # for don't bets). Meanwhile a travelled don't-come with a point
+        # WINS on seven-out. Same roll, same family, opposite outcomes.
+        table = Table(
+            roller=ScriptedRoller(
+                [DiceRoll(3, 3), DiceRoll(4, 4), DiceRoll(1, 6)],
+            )
+        )
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()  # point 6
+        travelled_dc_id = table.place_bet(BetType.DONT_COME, 5)
+        table.roll()  # don't-come travels to 8
+        fresh_dc_id = table.place_bet(BetType.DONT_COME, 5)
+        result = table.roll()  # seven-out
+        by_id = {r.bet_id: r for r in result.resolutions}
+        # Travelled don't-come wins on seven-out.
+        assert by_id[travelled_dc_id].kind is BetType.DONT_COME
+        assert by_id[travelled_dc_id].outcome is Outcome.WIN
+        # Fresh don't-come loses (7 is a loser on its own come-out).
+        assert by_id[fresh_dc_id].kind is BetType.DONT_COME
+        assert by_id[fresh_dc_id].outcome is Outcome.LOSE
+
 
 class TestPassOddsResolution:
     """Pass-odds payouts at true odds for every point."""

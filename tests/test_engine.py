@@ -1510,6 +1510,53 @@ class TestComeFamilyOddsTruncationGuard:
             table.place_bet(BetType.DONT_COME_ODDS, bad_amount, linked_bet_id=dc_id)
 
 
+class TestRemoveBet:
+    """``remove_bet`` takes down player-removable bets."""
+
+    def test_remove_place_bet(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        place_id = table.place_bet(BetType.PLACE, 6, number=8)
+        removed = table.remove_bet(place_id)
+        assert removed.bet_id == place_id
+        assert removed.kind is BetType.PLACE
+        assert not any(b.bet_id == place_id for b in table.active_bets)
+
+    def test_remove_pass_odds(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        odds_id = table.place_bet(BetType.PASS_ODDS, 10)
+        table.remove_bet(odds_id)
+        assert not any(b.kind is BetType.PASS_ODDS for b in table.active_bets)
+
+    def test_remove_field_bet(self) -> None:
+        table = Table(seed=42)
+        field_id = table.place_bet(BetType.FIELD, 5)
+        table.remove_bet(field_id)
+        assert table.active_bets == ()
+
+    def test_rejects_removal_of_pass_line(self) -> None:
+        table = Table(seed=42)
+        pass_id = table.place_bet(BetType.PASS_LINE, 5)
+        with pytest.raises(ValueError, match="cannot be taken down"):
+            table.remove_bet(pass_id)
+
+    def test_rejects_removal_of_come_bet(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        table.place_bet(BetType.PASS_LINE, 5)
+        table.roll()
+        come_id = table.place_bet(BetType.COME, 5)
+        with pytest.raises(ValueError, match="cannot be taken down"):
+            table.remove_bet(come_id)
+
+    def test_rejects_invalid_bet_id(self) -> None:
+        table = Table(seed=42)
+        with pytest.raises(ValueError, match="no active bet"):
+            table.remove_bet(999)
+
+
 class TestEngineConvergenceVsClosedForm:
     """Monte Carlo cross-checks: engine edges match closed-form values.
 

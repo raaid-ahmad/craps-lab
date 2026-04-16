@@ -343,6 +343,24 @@ class Table:
             travelled=tuple(travelled),
         )
 
+    def remove_bet(self, bet_id: int) -> ActiveBet:
+        """Remove a bet from the table and return it.
+
+        Only bets the casino allows the player to take down may be
+        removed: place bets, odds bets, and field bets. Contract
+        bets (pass line, don't pass, come, don't come) cannot be
+        removed once placed.
+        """
+        bet = self._find_bet_by_id(bet_id)
+        if bet is None:
+            msg = f"no active bet with bet_id {bet_id}"
+            raise ValueError(msg)
+        if bet.kind in _LINE_BETS:
+            msg = f"{bet.kind} bets cannot be taken down"
+            raise ValueError(msg)
+        self._bets = [b for b in self._bets if b.bet_id != bet_id]
+        return bet
+
     def _validate_placement(
         self,
         kind: BetType,

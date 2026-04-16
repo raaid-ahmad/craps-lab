@@ -283,6 +283,9 @@ class Table:
           don't-come bet that has established its own point, and
           must not already have an odds bet attached.
         """
+        if type(kind) is not BetType:
+            msg = f"kind must be a BetType, got {type(kind).__name__}"
+            raise TypeError(msg)
         self._validate_placement(kind, linked_bet_id)
         bet_point = self._resolve_bet_point(kind, linked_bet_id)
         parent_bet_id = self._resolve_parent_bet_id(kind, linked_bet_id)

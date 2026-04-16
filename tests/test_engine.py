@@ -397,6 +397,26 @@ class TestLinkedBetIdTypeSafety:
             table.place_bet(BetType.DONT_COME_ODDS, 10, linked_bet_id=bad)  # type: ignore[arg-type]
 
 
+class TestBetKindTypeSafety:
+    """``place_bet`` rejects raw strings that happen to equal a BetType value.
+
+    ``BetType`` is a ``StrEnum``, so ``"pass_line" == BetType.PASS_LINE``
+    is ``True`` — but ``"pass_line" is BetType.PASS_LINE`` is ``False``.
+    The engine uses identity (``is``) in several internal lookups, so
+    accepting a raw string would bypass uniqueness guards.
+    """
+
+    def test_rejects_raw_string_matching_bet_type(self) -> None:
+        table = Table(seed=42)
+        with pytest.raises(TypeError, match="kind must be a BetType"):
+            table.place_bet("pass_line", 5)  # type: ignore[arg-type]
+
+    def test_rejects_non_string_non_bet_type(self) -> None:
+        table = Table(seed=42)
+        with pytest.raises(TypeError, match="kind must be a BetType"):
+            table.place_bet(42, 5)  # type: ignore[arg-type]
+
+
 class TestTravelledField:
     """``RollResolution.travelled`` exposes point-set transitions.
 

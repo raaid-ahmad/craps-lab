@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from craps_lab.bets import BetType
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from craps_lab.bets import BetType
     from craps_lab.engine import ActiveBet, RollResolution, Table
 
 
@@ -121,6 +122,36 @@ class Strategy(ABC):
     def name(self) -> str:
         """Human-readable name; defaults to the class name."""
         return type(self).__name__
+
+
+_DEFAULT_3_4_5X: dict[int, int] = {4: 3, 5: 4, 6: 5, 8: 5, 9: 4, 10: 3}
+
+
+class PassLineWithOdds(Strategy):
+    """Pass line with odds behind it.
+
+    Come-out: place a pass-line bet. Once the point is established,
+    place pass-odds at the configured multiplier (default 3-4-5x).
+    """
+
+    def __init__(
+        self,
+        line_amount: int = 5,
+        odds_multiplier: dict[int, int] | None = None,
+    ) -> None:
+        self._line = line_amount
+        self._odds = odds_multiplier or _DEFAULT_3_4_5X
+
+    def get_actions(self, ctx: Context) -> Sequence[BetAction]:
+        actions: list[BetAction] = []
+        has_pass = any(b.kind is BetType.PASS_LINE for b in ctx.active_bets)
+        has_odds = any(b.kind is BetType.PASS_ODDS for b in ctx.active_bets)
+
+        if ctx.point is None and not has_pass:
+            actions.append(BetAction.place(BetType.PASS_LINE, self._line))
+        if ctx.point is not None and has_pass and not has_odds:
+            actions.append(BetAction.place(BetType.PASS_ODDS, self._line * self._odds[ctx.point]))
+        return actions
 
 
 def run_strategy(

@@ -9,10 +9,12 @@ import pytest
 from craps_lab.bets import BetType
 from craps_lab.dice import DiceRoll
 from craps_lab.engine import Table
+from craps_lab.probability import ODDS_3_4_5X, pass_line_plus_odds_edge
 from craps_lab.strategy import (
     ActionType,
     BetAction,
     Context,
+    PassLineWithOdds,
     Strategy,
     run_strategy,
 )
@@ -147,3 +149,56 @@ class TestRunStrategy:
 
     def test_strategy_name_defaults_to_class_name(self) -> None:
         assert AlwaysPass().name == "AlwaysPass"
+
+
+class TestPassLineWithOdds:
+    """PassLineWithOdds places pass line on come-out and odds on point."""
+
+    def test_places_pass_line_on_come_out(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3)]))
+        results = run_strategy(PassLineWithOdds(), table, max_rolls=1)
+        assert any(b.kind is BetType.PASS_LINE for b in table.active_bets)
+        assert results[0].point_after == 6
+
+    def test_places_odds_after_point_established(self) -> None:
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(2, 2)]))
+        results = run_strategy(PassLineWithOdds(), table, max_rolls=2)
+        assert results[0].point_after == 6
+        assert any(b.kind is BetType.PASS_ODDS for b in table.active_bets)
+        odds_bet = next(b for b in table.active_bets if b.kind is BetType.PASS_ODDS)
+        assert odds_bet.amount == 25  # 5 * 5x on point 6
+
+    def test_replaces_pass_line_after_resolution(self) -> None:
+        # Come-out 7 wins, next come-out should place a new pass line.
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 4), DiceRoll(3, 3)]))
+        results = run_strategy(PassLineWithOdds(), table, max_rolls=2)
+        assert results[0].resolutions[0].kind is BetType.PASS_LINE
+        assert any(b.kind is BetType.PASS_LINE for b in table.active_bets)
+
+    def test_full_cycle_point_hit(self) -> None:
+        # Come-out 6, point phase 4 (no-op), point 6 hit → win.
+        table = Table(roller=ScriptedRoller([DiceRoll(3, 3), DiceRoll(2, 2), DiceRoll(4, 2)]))
+        results = run_strategy(PassLineWithOdds(), table, max_rolls=3)
+        final = results[2]
+        by_kind = {r.kind: r for r in final.resolutions}
+        assert by_kind[BetType.PASS_LINE].payout == 5
+        assert by_kind[BetType.PASS_ODDS].payout == 30  # 25 * 6/5
+
+    def test_convergence_vs_closed_form(self) -> None:
+        table = Table(seed=0xBE77ED)
+        strategy = PassLineWithOdds(line_amount=1)
+        results = run_strategy(strategy, table, max_rolls=500_000)
+        total_payout = sum(r.payout for res in results for r in res.resolutions)
+        total_wagered = sum(
+            r.amount
+            for res in results
+            for r in res.resolutions
+            if r.kind in (BetType.PASS_LINE, BetType.PASS_ODDS)
+        )
+        if total_wagered == 0:
+            pytest.skip("no wagers placed")
+        empirical_edge = -total_payout / total_wagered
+        expected_edge = float(pass_line_plus_odds_edge(ODDS_3_4_5X))
+        # 5-sigma tolerance on the edge estimate.
+        sem = 1.0 / (len(results) ** 0.5)
+        assert abs(empirical_edge - expected_edge) < 5 * sem

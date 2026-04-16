@@ -23,10 +23,12 @@ from craps_lab.probability import (
     dont_pass_plus_lay_odds_edge,
     dont_pass_push_probability,
     dont_pass_win_probability,
+    field_house_edge,
     pass_line_house_edge,
     pass_line_plus_odds_edge,
     pass_line_win_probability,
     pass_odds_expected_value,
+    place_bet_house_edge,
     probability_point_before_seven,
     two_dice_sum_count,
     two_dice_sum_pmf,
@@ -425,3 +427,45 @@ def test_dont_pass_composite_edge_decreases_monotonically_with_lay() -> None:
     e6 = dont_pass_plus_lay_odds_edge(uniform_odds_policy(6))
     e10 = dont_pass_plus_lay_odds_edge(uniform_odds_policy(10))
     assert e0 > e1 > e2 > e3 > e6 > e10
+
+
+def test_place_bet_house_edge_6_8_is_exactly_1_over_66() -> None:
+    assert place_bet_house_edge(6) == Fraction(1, 66)
+    assert place_bet_house_edge(8) == Fraction(1, 66)
+
+
+def test_place_bet_house_edge_5_9_is_exactly_1_over_25() -> None:
+    assert place_bet_house_edge(5) == Fraction(1, 25)
+    assert place_bet_house_edge(9) == Fraction(1, 25)
+
+
+def test_place_bet_house_edge_4_10_is_exactly_1_over_15() -> None:
+    assert place_bet_house_edge(4) == Fraction(1, 15)
+    assert place_bet_house_edge(10) == Fraction(1, 15)
+
+
+def test_place_bet_house_edge_matches_canonical_percentages() -> None:
+    assert 0.0151 < float(place_bet_house_edge(6)) < 0.0153  # ~1.52%
+    assert 0.0399 < float(place_bet_house_edge(5)) < 0.0401  # 4.00%
+    assert 0.0666 < float(place_bet_house_edge(4)) < 0.0668  # ~6.67%
+
+
+def test_place_bet_house_edge_increases_away_from_7() -> None:
+    e68 = place_bet_house_edge(6)
+    e59 = place_bet_house_edge(5)
+    e410 = place_bet_house_edge(4)
+    assert e68 < e59 < e410
+
+
+@pytest.mark.parametrize("bad", [1, 7, 11, 12, 13, 0])
+def test_place_bet_house_edge_rejects_non_point_numbers(bad: int) -> None:
+    with pytest.raises(ValueError, match="number must be one of"):
+        place_bet_house_edge(bad)
+
+
+def test_field_house_edge_is_exactly_1_over_36() -> None:
+    assert field_house_edge() == Fraction(1, 36)
+
+
+def test_field_house_edge_matches_canonical_percentage() -> None:
+    assert 0.0277 < float(field_house_edge()) < 0.0279  # ~2.78%

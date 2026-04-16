@@ -49,8 +49,11 @@ from craps_lab.bets import (
     DONT_PASS_BAR,
     DONT_PASS_COME_OUT_WINS,
     DONT_PASS_LAY_PAYOUT_RATIO,
+    FIELD_PAYOUT_MULTIPLIER,
+    FIELD_WINNERS,
     PASS_LINE_NATURAL_WINNERS,
     PASS_ODDS_PAYOUT_RATIO,
+    PLACE_PAYOUT_RATIO,
     POINT_NUMBERS,
     SEVEN,
 )
@@ -477,3 +480,52 @@ def dont_pass_plus_lay_odds_edge(lay_policy: Mapping[int, Fraction]) -> Fraction
     )
     total_wagered = Fraction(1) + expected_lay_bet
     return dont_pass_house_edge() / total_wagered
+
+
+def place_bet_house_edge(number: int) -> Fraction:
+    """Return the closed-form house edge for a place bet on ``number``.
+
+    A place bet resolves in the same geometric process as a point-
+    phase line bet — win when ``number`` is rolled, lose when 7 is
+    rolled, all other rolls are indifferent — but pays sub-true-odds
+    (see :py:data:`craps_lab.bets.PLACE_PAYOUT_RATIO`). The gap
+    between the true-odds ratio and the place-odds ratio is the
+    house edge.
+
+        E[P/L] = P(n before 7) * payout(n) - P(7 before n) * 1
+        edge   = -E[P/L]
+
+    Canonical values: 1/66 (~1.52%) on 6/8, 1/25 (4%) on 5/9,
+    1/15 (~6.67%) on 4/10.
+    """
+    if number not in POINT_NUMBERS:
+        msg = f"number must be one of {POINT_NUMBERS}, got {number}"
+        raise ValueError(msg)
+    p_win = probability_point_before_seven(number)
+    p_lose = Fraction(1) - p_win
+    payout = PLACE_PAYOUT_RATIO[number]
+    return -(p_win * payout - p_lose)
+
+
+def field_house_edge() -> Fraction:
+    """Return the closed-form field bet house edge (double-2, triple-12).
+
+    The field is a single-roll bet: every 2d6 outcome either wins or
+    loses immediately. The expected value per $1 is
+
+        E[P/L] = sum_{s in winners} P(S=s) * multiplier(s)
+               - sum_{s in losers}  P(S=s) * 1
+
+    Under the double-2, triple-12 variant the house edge is
+    ``1/36 ~ 2.78%``. If 12 paid only double, the edge would be
+    ``2/36 = 1/18 ~ 5.56%``.
+    """
+    pmf = two_dice_sum_pmf()
+    ev = sum(
+        (pmf[s] * Fraction(FIELD_PAYOUT_MULTIPLIER[s]) for s in FIELD_WINNERS),
+        start=Fraction(0),
+    ) - sum(
+        (pmf[s] for s in pmf if s not in FIELD_WINNERS),
+        start=Fraction(0),
+    )
+    return -ev

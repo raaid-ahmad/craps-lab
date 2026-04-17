@@ -272,6 +272,14 @@ def run_strategy(
     return results
 
 
+PRESETS: dict[str, type[Strategy]] = {
+    "pass-line-with-odds": PassLineWithOdds,
+    "iron-cross": IronCross,
+    "three-point-molly": ThreePointMolly,
+}
+"""Registry mapping CLI slugs to strategy classes."""
+
+
 def _apply_actions(table: Table, actions: Sequence[BetAction]) -> None:
     for action in actions:
         if action.action is ActionType.PLACE:

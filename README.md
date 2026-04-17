@@ -26,7 +26,7 @@ The engine underneath is built on exact probability math so the simulator's answ
 ```bash
 # Run a preset against a realistic session
 craps-lab run --strategy pass-line-with-odds \
-              --bankroll 500 --hours 4 --stop-win 200 --stop-loss 500 \
+              --bankroll 500 --hours 4 --stop-win 200 --stop-loss 300 \
               --sessions 10000
 
 # Compare strategies head-to-head on the same seed
@@ -51,7 +51,7 @@ Write your own by subclassing `Strategy` and implementing `get_actions()`.
 
 ## Status
 
-The engine and strategy layer are built. The session runner, CLI, and visual reporting are next. `main` is always green.
+All phases are complete. `main` is always green.
 
 ## Roadmap
 
@@ -62,11 +62,11 @@ The engine and strategy layer are built. The session runner, CLI, and visual rep
 | ✅ 2 — Bets & edges | Line bets, come bets, place bets, field, free odds; closed-form house edges |
 | ✅ 3 — Multi-bet engine | Table state machine: per-roll resolution of multiple simultaneous bets |
 | ✅ 4 — Strategy layer | `Strategy` base class, `BetAction` / `Context` primitives, three presets |
-| 🛠 5 — Session runner | Bankroll tracking, stop rules, real-world time parameterization, equity curves |
-| 🛠 6 — Campaign runner | Many sessions aggregated; head-to-head strategy comparison on a shared seed |
-| 🛠 7 — Reporting | Risk of ruin, hit-target rate, drawdown distribution, P&L histograms |
-| 🛠 8 — CLI | Typer-based `run` / `compare` / `list-presets` with rich table output |
-| 🛠 9 — Streamlit UI | Interactive strategy picker, session config, results dashboard |
+| ✅ 5 — Session runner | Bankroll tracking, stop rules, real-world time parameterization, equity curves |
+| ✅ 6 — Campaign runner | Many sessions aggregated; head-to-head strategy comparison on a shared seed |
+| ✅ 7 — Reporting | Risk of ruin, hit-target rate, drawdown distribution, P&L histograms |
+| ✅ 8 — CLI | Typer-based `run` / `compare` / `list-presets` with rich table output |
+| ✅ 9 — Streamlit UI | Interactive strategy picker, session config, results dashboard |
 
 ## Development
 

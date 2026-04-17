@@ -36,7 +36,12 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.26",
+    "typer>=0.12",
+    "rich>=13.0",
 ]
+
+[project.scripts]
+craps-lab = "craps_lab.cli:app"
 
 [project.optional-dependencies]
 dev = [
@@ -46,6 +51,14 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.5",
     "pre-commit>=3.7",
+    "matplotlib>=3.9",
+]
+viz = [
+    "matplotlib>=3.9",
+]
+streamlit = [
+    "streamlit>=1.35",
+    "matplotlib>=3.9",
 ]
 notebooks = [
     "jupyter>=1.1",
@@ -64,7 +77,7 @@ packages = ["src/craps_lab"]
 target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
-extend-exclude = ["notebooks"]
+extend-exclude = ["notebooks", "app"]
 
 [tool.ruff.lint]
 select = ["ALL"]

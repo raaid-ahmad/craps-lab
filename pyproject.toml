@@ -84,6 +84,9 @@ line-length = 100
 src = ["src", "tests"]
 extend-exclude = ["notebooks", "app"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["api", "craps_lab"]
+
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
@@ -128,6 +131,7 @@ exclude = [
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = [
     "-ra",
     "--strict-markers",

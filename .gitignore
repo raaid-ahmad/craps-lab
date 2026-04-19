@@ -6,16 +6,17 @@ __pycache__/
 # C extensions
 *.so
 
-# Distribution / packaging
+# Distribution / packaging (Python — scoped to repo root so they don't
+# catch lib/ or build/ nested inside frontend sources)
 .Python
-build/
+/build/
 develop-eggs/
-dist/
+/dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -76,4 +77,10 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
-.claude/tmp/
+
+# Claude Code local settings (user-specific, do not commit)
+.claude/
+
+# Node / frontend build artifacts
+node_modules/
+web/dist/

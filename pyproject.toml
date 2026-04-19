@@ -60,6 +60,11 @@ streamlit = [
     "streamlit>=1.35",
     "matplotlib>=3.9",
 ]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+]
 notebooks = [
     "jupyter>=1.1",
     "matplotlib>=3.9",

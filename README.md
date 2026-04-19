@@ -32,12 +32,24 @@ craps-lab run --strategy pass-line-with-odds \
 # Compare strategies head-to-head on the same seed
 craps-lab compare --strategies pass-line-with-odds,iron-cross \
                   --bankroll 500 --hours 4 --sessions 10000
-
-# Or explore interactively
-streamlit run app/streamlit_app.py
 ```
 
-*CLI and UI are coming — see the roadmap below.*
+Prefer a browser? Start the FastAPI backend and the Vite dev server
+in two terminals:
+
+```bash
+# Terminal 1 — API
+pip install -e ".[api]"
+uvicorn api.main:app --reload
+
+# Terminal 2 — web UI
+cd web && npm install && npm run dev
+```
+
+Then open http://localhost:5173.
+
+A Streamlit dashboard is also available at
+`streamlit run app/streamlit_app.py` for a single-process setup.
 
 ## Built-in strategies
 
@@ -67,6 +79,7 @@ All phases are complete. `main` is always green.
 | ✅ 7 — Reporting | Risk of ruin, hit-target rate, drawdown distribution, P&L histograms |
 | ✅ 8 — CLI | Typer-based `run` / `compare` / `list-presets` with rich table output |
 | ✅ 9 — Streamlit UI | Interactive strategy picker, session config, results dashboard |
+| ✅ 10 — React UI | FastAPI backend + React/Plotly/Tailwind frontend for a polished browser experience |
 
 ## Development
 
@@ -88,7 +101,7 @@ Every commit lands on a green build:
 ```bash
 ruff check .
 ruff format --check .
-mypy src tests
+mypy src tests api
 pytest
 ```
 

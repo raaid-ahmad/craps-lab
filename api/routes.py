@@ -92,12 +92,16 @@ def _resolve_strategy(slug: str) -> Strategy:
     return PRESETS[slug]()
 
 
+def _display_name(slug: str) -> str:
+    return str(_PRESET_META[slug]["name"])
+
+
 @router.post("/simulate")
 def simulate(req: SimulateRequest) -> SimulateResponse:
     strategy = _resolve_strategy(req.strategy)
     config = _make_config(req)
     result = run_campaign(strategy, config, sessions=req.sessions, base_seed=0)
-    return serialize_campaign(result)
+    return serialize_campaign(result, display_name=_display_name(req.strategy))
 
 
 @router.post("/compare")
@@ -105,4 +109,9 @@ def compare(req: CompareRequest) -> CompareResponse:
     strategies = [_resolve_strategy(slug) for slug in req.strategies]
     config = _make_config(req)
     results = compare_strategies(strategies, config, sessions=req.sessions, base_seed=0)
-    return CompareResponse(results=[serialize_campaign(r) for r in results])
+    return CompareResponse(
+        results=[
+            serialize_campaign(r, display_name=_display_name(slug))
+            for slug, r in zip(req.strategies, results, strict=True)
+        ],
+    )

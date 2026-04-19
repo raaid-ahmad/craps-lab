@@ -10,14 +10,18 @@ from craps_lab.campaign import CampaignResult, CampaignSummary, summarize
 from .schemas import ChartData, EquityPercentiles, SimulateResponse, SummaryStats
 
 
-def _build_summary(campaign: CampaignResult, cs: CampaignSummary) -> SummaryStats:
+def _build_summary(
+    campaign: CampaignResult,
+    cs: CampaignSummary,
+    display_name: str | None = None,
+) -> SummaryStats:
     """Build summary stats including avg_win/avg_loss and p10/p90."""
     nets = np.array([s.net for s in campaign.sessions], dtype=np.float64)
     wins = nets[nets > 0]
     losses = nets[nets < 0]
 
     return SummaryStats(
-        strategy_name=cs.strategy_name,
+        strategy_name=display_name if display_name is not None else cs.strategy_name,
         session_count=cs.session_count,
         win_rate=cs.win_rate,
         bust_rate=cs.bust_rate,
@@ -89,11 +93,20 @@ def _sample_equity_curves(campaign: CampaignResult, n: int = 30, seed: int = 0) 
     return curves
 
 
-def serialize_campaign(campaign: CampaignResult) -> SimulateResponse:
-    """Convert a CampaignResult into a SimulateResponse."""
+def serialize_campaign(
+    campaign: CampaignResult,
+    *,
+    display_name: str | None = None,
+) -> SimulateResponse:
+    """Convert a CampaignResult into a SimulateResponse.
+
+    ``display_name`` overrides the campaign's strategy_name so the
+    UI can show a presentation-friendly label (e.g. "Pass Line with
+    Odds") instead of the engine's class-name default.
+    """
     cs = summarize(campaign)
     return SimulateResponse(
-        summary=_build_summary(campaign, cs),
+        summary=_build_summary(campaign, cs, display_name=display_name),
         charts=ChartData(
             pnl_values=[s.net for s in campaign.sessions],
             drawdown_values=[s.max_drawdown for s in campaign.sessions],

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sidebar, { type SimConfig } from "./components/Sidebar";
 import StatCards from "./components/StatCards";
 import PnlChart from "./components/PnlChart";
@@ -12,6 +12,23 @@ export default function App() {
   const [results, setResults] = useState<SimulateResponse[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [configLabel, setConfigLabel] = useState("");
+  const [elapsed, setElapsed] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!loading) return;
+    const start = Date.now();
+    setElapsed(0);
+    const id = window.setInterval(
+      () => setElapsed((Date.now() - start) / 1000),
+      200
+    );
+    return () => window.clearInterval(id);
+  }, [loading]);
+
+  const handleCancel = () => {
+    abortRef.current?.abort(new DOMException("Cancelled", "AbortError"));
+  };
 
   const handleRun = async (config: SimConfig) => {
     setLoading(true);
@@ -20,33 +37,52 @@ export default function App() {
     const label = `$${config.bankroll} bankroll | ${config.hours}h (${Math.round(config.hours * config.rollsPerHour)} rolls) | ${config.sessions.toLocaleString()} sessions`;
     setConfigLabel(label);
 
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     try {
       if (config.strategyB) {
-        const res = await compare({
-          strategies: [config.strategy, config.strategyB],
-          bankroll: config.bankroll,
-          hours: config.hours,
-          rolls_per_hour: config.rollsPerHour,
-          stop_win: config.stopWin,
-          stop_loss: config.stopLoss,
-          sessions: config.sessions,
-        });
+        const res = await compare(
+          {
+            strategies: [config.strategy, config.strategyB],
+            bankroll: config.bankroll,
+            hours: config.hours,
+            rolls_per_hour: config.rollsPerHour,
+            stop_win: config.stopWin,
+            stop_loss: config.stopLoss,
+            sessions: config.sessions,
+          },
+          ctrl.signal
+        );
         setResults(res.results);
       } else {
-        const res = await simulate({
-          strategy: config.strategy,
-          bankroll: config.bankroll,
-          hours: config.hours,
-          rolls_per_hour: config.rollsPerHour,
-          stop_win: config.stopWin,
-          stop_loss: config.stopLoss,
-          sessions: config.sessions,
-        });
+        const res = await simulate(
+          {
+            strategy: config.strategy,
+            bankroll: config.bankroll,
+            hours: config.hours,
+            rolls_per_hour: config.rollsPerHour,
+            stop_win: config.stopWin,
+            stop_loss: config.stopLoss,
+            sessions: config.sessions,
+          },
+          ctrl.signal
+        );
         setResults([res]);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Simulation failed");
+      if (ctrl.signal.aborted) {
+        const reason = ctrl.signal.reason;
+        if (reason instanceof DOMException && reason.name === "TimeoutError") {
+          setError("Run timed out after 30s. Try fewer sessions or shorter hours.");
+        } else {
+          setError("Run cancelled.");
+        }
+      } else {
+        setError(e instanceof Error ? e.message : "Simulation failed");
+      }
     } finally {
+      abortRef.current = null;
       setLoading(false);
     }
   };
@@ -64,7 +100,7 @@ export default function App() {
           </div>
         )}
 
-        {loading && <LoadingSkeleton />}
+        {loading && <LoadingSkeleton elapsed={elapsed} onCancel={handleCancel} />}
 
         {results && !loading && (
           <div className="p-6 space-y-6 max-w-7xl">
@@ -146,21 +182,33 @@ function EmptyState() {
   );
 }
 
-function LoadingSkeleton() {
+function LoadingSkeleton({ elapsed, onCancel }: { elapsed: number; onCancel: () => void }) {
   return (
-    <div className="p-6 space-y-6 max-w-7xl animate-pulse">
-      <div className="h-6 w-64 bg-slate-200 rounded" />
-      <div className="h-4 w-full max-w-2xl bg-slate-200 rounded" />
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-xl border border-slate-200 p-4 h-24" />
-        ))}
+    <div className="p-6 space-y-6 max-w-7xl">
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3">
+        <span className="text-sm text-slate-600">
+          Simulating… <span className="font-mono text-slate-800">{elapsed.toFixed(1)}s</span>
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-xs font-semibold text-red-600 hover:text-red-700 px-3 py-1.5 rounded-md border border-red-200 hover:bg-red-50"
+        >
+          Cancel
+        </button>
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-slate-200 h-96" />
+      <div className="animate-pulse space-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="bg-white rounded-xl border border-slate-200 p-4 h-24" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="bg-white rounded-xl border border-slate-200 h-96" />
+          <div className="bg-white rounded-xl border border-slate-200 h-96" />
+        </div>
         <div className="bg-white rounded-xl border border-slate-200 h-96" />
       </div>
-      <div className="bg-white rounded-xl border border-slate-200 h-96" />
     </div>
   );
 }

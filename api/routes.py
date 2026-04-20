@@ -57,6 +57,27 @@ _PRESET_META: dict[str, dict[str, object]] = {
 }
 
 
+def _check_preset_metadata_matches_registry() -> None:
+    """Fail at import if a strategy was added without UI metadata.
+
+    Without this guard, /api/presets crashes with a 500 the first time
+    someone hits it after registering a new preset.
+    """
+    missing = set(PRESETS) - set(_PRESET_META)
+    extra = set(_PRESET_META) - set(PRESETS)
+    if missing or extra:
+        details = []
+        if missing:
+            details.append(f"missing metadata: {sorted(missing)}")
+        if extra:
+            details.append(f"orphan metadata: {sorted(extra)}")
+        msg = "Preset metadata is out of sync with PRESETS — " + "; ".join(details)
+        raise RuntimeError(msg)
+
+
+_check_preset_metadata_matches_registry()
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

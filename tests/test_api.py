@@ -8,6 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
+from api.routes import _PRESET_META
+from craps_lab.strategy import PRESETS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -49,6 +51,10 @@ class TestPresets:
         assert entry["name"]
         assert entry["description"]
         assert len(entry["params"]) >= 1
+
+    def test_metadata_matches_strategy_registry(self) -> None:
+        # If this fails, a new preset was added to the engine without UI metadata.
+        assert set(_PRESET_META.keys()) == set(PRESETS.keys())
 
 
 class TestSimulate:

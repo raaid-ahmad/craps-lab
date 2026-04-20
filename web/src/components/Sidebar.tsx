@@ -20,6 +20,7 @@ interface Props {
 
 export default function Sidebar({ onRun, loading }: Props) {
   const [presets, setPresets] = useState<PresetInfo[]>([]);
+  const [presetError, setPresetError] = useState<string | null>(null);
   const [strategy, setStrategy] = useState("");
   const [compare, setCompare] = useState(false);
   const [strategyB, setStrategyB] = useState("");
@@ -33,13 +34,20 @@ export default function Sidebar({ onRun, loading }: Props) {
   const [stopLoss, setStopLoss] = useState(300);
 
   useEffect(() => {
-    fetchPresets().then((p) => {
-      setPresets(p);
-      if (p.length > 0) {
-        setStrategy(p[0].slug);
-        if (p.length > 1) setStrategyB(p[1].slug);
-      }
-    });
+    fetchPresets()
+      .then((p) => {
+        setPresets(p);
+        setPresetError(null);
+        if (p.length > 0) {
+          setStrategy(p[0].slug);
+          if (p.length > 1) setStrategyB(p[1].slug);
+        }
+      })
+      .catch(() => {
+        setPresetError(
+          "Could not reach the API. Start it in another terminal with: uvicorn api.main:app --reload"
+        );
+      });
   }, []);
 
   const handleRun = () => {
@@ -70,6 +78,15 @@ export default function Sidebar({ onRun, loading }: Props) {
       </div>
 
       <div className="flex-1 px-5 py-5 space-y-5">
+        {presetError && (
+          <div
+            role="alert"
+            className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-200 leading-relaxed"
+          >
+            {presetError}
+          </div>
+        )}
+
         {/* Strategy */}
         <fieldset>
           <Label>Strategy</Label>
@@ -77,6 +94,7 @@ export default function Sidebar({ onRun, loading }: Props) {
             value={strategy}
             onChange={(e) => setStrategy(e.target.value)}
             className="input-field"
+            disabled={presets.length === 0}
           >
             {presets.map((p) => (
               <option key={p.slug} value={p.slug}>
@@ -240,7 +258,7 @@ export default function Sidebar({ onRun, loading }: Props) {
       <div className="px-5 pb-5 pt-2">
         <button
           onClick={handleRun}
-          disabled={loading}
+          disabled={loading || presets.length === 0}
           className="w-full py-2.5 rounded-lg font-semibold text-sm transition-all
                      bg-blue-600 hover:bg-blue-500 text-white
                      disabled:opacity-50 disabled:cursor-not-allowed

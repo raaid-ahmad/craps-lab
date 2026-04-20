@@ -99,6 +99,15 @@ class TestSimulate:
         res = client.post("/api/simulate", json={**_FAST_BODY, "seed": -1})
         assert res.status_code == 422
 
+    def test_sub_one_roll_rejected(self, client: TestClient) -> None:
+        # hours * rolls_per_hour < 1 used to slip through and crash downstream
+        res = client.post(
+            "/api/simulate",
+            json={**_FAST_BODY, "hours": 0.001, "rolls_per_hour": 1},
+        )
+        assert res.status_code == 422
+        assert "roll" in res.text.lower()
+
 
 class TestCompare:
     def test_head_to_head_returns_one_result_per_strategy(self, client: TestClient) -> None:

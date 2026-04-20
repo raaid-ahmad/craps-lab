@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Self
+
+from pydantic import BaseModel, Field, model_validator
 
 # ------------------------------------------------------------------
 # Request models
 # ------------------------------------------------------------------
+
+
+def _require_at_least_one_roll(hours: float, rolls_per_hour: int) -> None:
+    if int(hours * rolls_per_hour) < 1:
+        msg = "hours * rolls_per_hour must yield at least one roll"
+        raise ValueError(msg)
 
 
 class SimulateRequest(BaseModel):
@@ -19,6 +27,11 @@ class SimulateRequest(BaseModel):
     sessions: int = Field(gt=0, default=10_000, le=100_000)
     seed: int | None = Field(default=None, ge=0, description="Base RNG seed; null draws random")
 
+    @model_validator(mode="after")
+    def _check_roll_count(self) -> Self:
+        _require_at_least_one_roll(self.hours, self.rolls_per_hour)
+        return self
+
 
 class CompareRequest(BaseModel):
     strategies: list[str] = Field(min_length=2, max_length=5)
@@ -29,6 +42,11 @@ class CompareRequest(BaseModel):
     stop_loss: int | None = Field(default=None, gt=0)
     sessions: int = Field(gt=0, default=10_000, le=100_000)
     seed: int | None = Field(default=None, ge=0, description="Base RNG seed; null draws random")
+
+    @model_validator(mode="after")
+    def _check_roll_count(self) -> Self:
+        _require_at_least_one_roll(self.hours, self.rolls_per_hour)
+        return self
 
 
 # ------------------------------------------------------------------

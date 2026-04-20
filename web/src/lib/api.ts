@@ -8,6 +8,39 @@ import type {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+interface FastApiValidationError {
+  loc?: unknown[];
+  msg?: string;
+}
+
+async function readErrorMessage(res: Response): Promise<string> {
+  let raw = "";
+  try {
+    raw = await res.text();
+  } catch {
+    return `Request failed (HTTP ${res.status}).`;
+  }
+
+  try {
+    const data = JSON.parse(raw) as { detail?: unknown };
+    const detail = data.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      return (detail as FastApiValidationError[])
+        .map((d) => {
+          const loc = Array.isArray(d.loc) ? d.loc.slice(1).join(".") : "";
+          const msg = d.msg ?? "invalid";
+          return loc ? `${loc}: ${msg}` : msg;
+        })
+        .join("; ");
+    }
+  } catch {
+    // body wasn't JSON — fall through to the raw text
+  }
+
+  return raw || `Request failed (HTTP ${res.status}).`;
+}
+
 async function post<T>(
   url: string,
   body: unknown,
@@ -37,8 +70,7 @@ async function post<T>(
       signal: ctrl.signal,
     });
     if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(`API error ${res.status}: ${detail}`);
+      throw new Error(await readErrorMessage(res));
     }
     return res.json();
   } finally {

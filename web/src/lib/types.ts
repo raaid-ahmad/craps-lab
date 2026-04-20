@@ -53,10 +53,12 @@ export interface ChartData {
 export interface SimulateResponse {
   summary: SummaryStats;
   charts: ChartData;
+  seed: number;
 }
 
 export interface CompareResponse {
   results: SimulateResponse[];
+  seed: number;
 }
 
 export interface SimulateRequest {
@@ -67,6 +69,7 @@ export interface SimulateRequest {
   stop_win: number | null;
   stop_loss: number | null;
   sessions: number;
+  seed?: number | null;
 }
 
 export interface CompareRequest {
@@ -77,4 +80,5 @@ export interface CompareRequest {
   stop_win: number | null;
   stop_loss: number | null;
   sessions: number;
+  seed?: number | null;
 }

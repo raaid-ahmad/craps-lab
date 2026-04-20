@@ -17,6 +17,7 @@ class SimulateRequest(BaseModel):
     stop_win: int | None = Field(default=None, gt=0)
     stop_loss: int | None = Field(default=None, gt=0)
     sessions: int = Field(gt=0, default=10_000, le=100_000)
+    seed: int | None = Field(default=None, ge=0, description="Base RNG seed; null draws random")
 
 
 class CompareRequest(BaseModel):
@@ -27,6 +28,7 @@ class CompareRequest(BaseModel):
     stop_win: int | None = Field(default=None, gt=0)
     stop_loss: int | None = Field(default=None, gt=0)
     sessions: int = Field(gt=0, default=10_000, le=100_000)
+    seed: int | None = Field(default=None, ge=0, description="Base RNG seed; null draws random")
 
 
 # ------------------------------------------------------------------
@@ -89,7 +91,9 @@ class ChartData(BaseModel):
 class SimulateResponse(BaseModel):
     summary: SummaryStats
     charts: ChartData
+    seed: int = Field(description="Base seed actually used; rerun with this for identical results")
 
 
 class CompareResponse(BaseModel):
     results: list[SimulateResponse]
+    seed: int = Field(description="Base seed actually used; rerun with this for identical results")

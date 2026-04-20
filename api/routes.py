@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, HTTPException
 
 from craps_lab.campaign import compare_strategies, run_campaign
@@ -96,22 +98,34 @@ def _display_name(slug: str) -> str:
     return str(_PRESET_META[slug]["name"])
 
 
+def _resolve_seed(seed: int | None) -> int:
+    """Honor caller-supplied seed; otherwise draw a fresh 32-bit seed.
+
+    A fixed default would mean every API call returns bit-identical
+    results, which contradicts the showcase's whole pitch.
+    """
+    return secrets.randbits(32) if seed is None else seed
+
+
 @router.post("/simulate")
 def simulate(req: SimulateRequest) -> SimulateResponse:
     strategy = _resolve_strategy(req.strategy)
     config = _make_config(req)
-    result = run_campaign(strategy, config, sessions=req.sessions, base_seed=0)
-    return serialize_campaign(result, display_name=_display_name(req.strategy))
+    seed = _resolve_seed(req.seed)
+    result = run_campaign(strategy, config, sessions=req.sessions, base_seed=seed)
+    return serialize_campaign(result, display_name=_display_name(req.strategy), seed=seed)
 
 
 @router.post("/compare")
 def compare(req: CompareRequest) -> CompareResponse:
     strategies = [_resolve_strategy(slug) for slug in req.strategies]
     config = _make_config(req)
-    results = compare_strategies(strategies, config, sessions=req.sessions, base_seed=0)
+    seed = _resolve_seed(req.seed)
+    results = compare_strategies(strategies, config, sessions=req.sessions, base_seed=seed)
     return CompareResponse(
         results=[
-            serialize_campaign(r, display_name=_display_name(slug))
+            serialize_campaign(r, display_name=_display_name(slug), seed=seed)
             for slug, r in zip(req.strategies, results, strict=True)
         ],
+        seed=seed,
     )

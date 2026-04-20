@@ -97,12 +97,15 @@ def serialize_campaign(
     campaign: CampaignResult,
     *,
     display_name: str | None = None,
+    seed: int = 0,
 ) -> SimulateResponse:
     """Convert a CampaignResult into a SimulateResponse.
 
     ``display_name`` overrides the campaign's strategy_name so the
     UI can show a presentation-friendly label (e.g. "Pass Line with
-    Odds") instead of the engine's class-name default.
+    Odds") instead of the engine's class-name default. ``seed`` is
+    echoed back to the client and feeds the equity-curve sampler so a
+    reproducible run reproduces the same spaghetti overlay too.
     """
     cs = summarize(campaign)
     return SimulateResponse(
@@ -111,6 +114,7 @@ def serialize_campaign(
             pnl_values=[s.net for s in campaign.sessions],
             drawdown_values=[s.max_drawdown for s in campaign.sessions],
             equity_percentiles=_build_equity_percentiles(campaign),
-            equity_sample=_sample_equity_curves(campaign),
+            equity_sample=_sample_equity_curves(campaign, seed=seed),
         ),
+        seed=seed,
     )

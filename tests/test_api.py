@@ -81,6 +81,24 @@ class TestSimulate:
         res = client.post("/api/simulate", json={**_FAST_BODY, "sessions": 200_000})
         assert res.status_code == 422
 
+    def test_explicit_seed_reproduces_results(self, client: TestClient) -> None:
+        body = {**_FAST_BODY, "seed": 12345}
+        a = client.post("/api/simulate", json=body).json()
+        b = client.post("/api/simulate", json=body).json()
+        assert a["seed"] == b["seed"] == 12345
+        assert a["charts"]["pnl_values"] == b["charts"]["pnl_values"]
+        assert a["charts"]["equity_sample"] == b["charts"]["equity_sample"]
+
+    def test_omitted_seed_varies_between_runs(self, client: TestClient) -> None:
+        a = client.post("/api/simulate", json=_FAST_BODY).json()
+        b = client.post("/api/simulate", json=_FAST_BODY).json()
+        assert a["seed"] != b["seed"]
+        assert a["charts"]["pnl_values"] != b["charts"]["pnl_values"]
+
+    def test_negative_seed_rejected(self, client: TestClient) -> None:
+        res = client.post("/api/simulate", json={**_FAST_BODY, "seed": -1})
+        assert res.status_code == 422
+
 
 class TestCompare:
     def test_head_to_head_returns_one_result_per_strategy(self, client: TestClient) -> None:
@@ -110,3 +128,14 @@ class TestCompare:
             "strategies": ["pass-line-with-odds", "bogus"],
         }
         assert client.post("/api/compare", json=body).status_code == 400
+
+    def test_explicit_seed_reproduces_results(self, client: TestClient) -> None:
+        body = {
+            **{k: v for k, v in _FAST_BODY.items() if k != "strategy"},
+            "strategies": ["pass-line-with-odds", "iron-cross"],
+            "seed": 42,
+        }
+        a = client.post("/api/compare", json=body).json()
+        b = client.post("/api/compare", json=body).json()
+        assert a["seed"] == b["seed"] == 42
+        assert a["results"][0]["charts"]["pnl_values"] == b["results"][0]["charts"]["pnl_values"]

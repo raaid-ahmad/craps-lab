@@ -84,3 +84,9 @@ Thumbs.db
 # Node / frontend build artifacts
 node_modules/
 web/dist/
+
+# Claude Code scratch
+.claude/tmp/
+
+# MoE review artifacts (local only)
+reviews/

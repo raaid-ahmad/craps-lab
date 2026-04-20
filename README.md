@@ -38,8 +38,7 @@ Prefer a browser? Start the FastAPI backend and the Vite dev server
 in two terminals:
 
 ```bash
-# Terminal 1 — API
-pip install -e ".[api]"
+# Terminal 1 — API (install once: pip install -e ".[api]")
 uvicorn api.main:app --reload
 
 # Terminal 2 — web UI
@@ -48,8 +47,12 @@ cd web && npm install && npm run dev
 
 Then open http://localhost:5173.
 
-A Streamlit dashboard is also available at
-`streamlit run app/streamlit_app.py` for a single-process setup.
+A Streamlit dashboard is also available for a single-process setup:
+
+```bash
+pip install -e ".[streamlit]"
+streamlit run app/streamlit_app.py
+```
 
 ## Built-in strategies
 
@@ -93,6 +96,11 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 pre-commit install
 ```
+
+Optional extras layer on top of `[dev]`: `[api]` (FastAPI backend),
+`[streamlit]` (Streamlit dashboard), `[notebooks]` (Jupyter +
+matplotlib for `notebooks/`). Combine as needed, e.g.
+`pip install -e ".[dev,api,notebooks]"`.
 
 ### Quality gates
 

@@ -198,7 +198,7 @@ export default function Sidebar({ onRun, loading }: Props) {
 
         <hr className="border-slate-700/50" />
 
-        {/* Stop conditions */}
+        {/* Stop conditions — phrased as profit deltas from starting bankroll */}
         <fieldset>
           <label className="flex items-center gap-2.5 cursor-pointer select-none mb-2">
             <input
@@ -208,21 +208,24 @@ export default function Sidebar({ onRun, loading }: Props) {
               className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500
                          focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-slate-900"
             />
-            <span className="text-sm text-slate-300">Stop-win</span>
+            <span className="text-sm text-slate-300">Stop when up</span>
           </label>
           {useStopWin && (
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-                $
-              </span>
-              <input
-                type="number"
-                value={stopWin}
-                onChange={(e) => setStopWin(Number(e.target.value))}
-                min={1}
-                className="input-field pl-7"
-              />
-            </div>
+            <>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                  $
+                </span>
+                <input
+                  type="number"
+                  value={stopWin}
+                  onChange={(e) => setStopWin(Number(e.target.value))}
+                  min={1}
+                  className="input-field pl-7"
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Profit target above starting bankroll.</p>
+            </>
           )}
         </fieldset>
 
@@ -235,21 +238,24 @@ export default function Sidebar({ onRun, loading }: Props) {
               className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500
                          focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-slate-900"
             />
-            <span className="text-sm text-slate-300">Stop-loss</span>
+            <span className="text-sm text-slate-300">Stop when down</span>
           </label>
           {useStopLoss && (
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-                $
-              </span>
-              <input
-                type="number"
-                value={stopLoss}
-                onChange={(e) => setStopLoss(Number(e.target.value))}
-                min={1}
-                className="input-field pl-7"
-              />
-            </div>
+            <>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                  $
+                </span>
+                <input
+                  type="number"
+                  value={stopLoss}
+                  onChange={(e) => setStopLoss(Number(e.target.value))}
+                  min={1}
+                  className="input-field pl-7"
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Loss limit below starting bankroll.</p>
+            </>
           )}
         </fieldset>
       </div>

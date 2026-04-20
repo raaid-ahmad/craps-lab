@@ -20,8 +20,8 @@ def _require_at_least_one_roll(hours: float, rolls_per_hour: int) -> None:
 class SimulateRequest(BaseModel):
     strategy: str = Field(description="Strategy preset slug")
     bankroll: int = Field(gt=0, description="Starting bankroll in dollars")
-    hours: float = Field(gt=0, default=4.0, description="Hours of play")
-    rolls_per_hour: int = Field(gt=0, default=60)
+    hours: float = Field(gt=0, le=24, default=4.0, description="Hours of play")
+    rolls_per_hour: int = Field(gt=0, le=300, default=60)
     stop_win: int | None = Field(default=None, gt=0)
     stop_loss: int | None = Field(default=None, gt=0)
     sessions: int = Field(gt=0, default=10_000, le=100_000)
@@ -36,8 +36,8 @@ class SimulateRequest(BaseModel):
 class CompareRequest(BaseModel):
     strategies: list[str] = Field(min_length=2, max_length=5)
     bankroll: int = Field(gt=0)
-    hours: float = Field(gt=0, default=4.0)
-    rolls_per_hour: int = Field(gt=0, default=60)
+    hours: float = Field(gt=0, le=24, default=4.0)
+    rolls_per_hour: int = Field(gt=0, le=300, default=60)
     stop_win: int | None = Field(default=None, gt=0)
     stop_loss: int | None = Field(default=None, gt=0)
     sessions: int = Field(gt=0, default=10_000, le=100_000)

@@ -125,6 +125,14 @@ class TestSimulate:
         assert res.status_code == 422
         assert "roll" in res.text.lower()
 
+    def test_excessive_hours_rejected(self, client: TestClient) -> None:
+        res = client.post("/api/simulate", json={**_FAST_BODY, "hours": 100})
+        assert res.status_code == 422
+
+    def test_excessive_rolls_per_hour_rejected(self, client: TestClient) -> None:
+        res = client.post("/api/simulate", json={**_FAST_BODY, "rolls_per_hour": 1_000})
+        assert res.status_code == 422
+
 
 class TestCompare:
     def test_head_to_head_returns_one_result_per_strategy(self, client: TestClient) -> None:

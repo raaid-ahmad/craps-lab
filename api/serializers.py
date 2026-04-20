@@ -45,18 +45,23 @@ def _build_summary(
 
 
 def _build_equity_percentiles(campaign: CampaignResult) -> EquityPercentiles:
-    """Compute percentile bands across all equity curves."""
-    sessions = campaign.sessions
-    max_len = max(len(s.equity_curve) for s in sessions)
-    initial = sessions[0].initial_bankroll
+    """Compute percentile bands across all equity curves.
 
-    # Pad shorter curves with their final value
+    Each session's curve is prefixed with its starting bankroll so the
+    bands share x=0 with the sample curves rendered on top of them. If
+    they didn't, the median line and the spaghetti overlay would tell
+    different stories about where the player started.
+    """
+    sessions = campaign.sessions
+    full_curves = [(s.initial_bankroll, *s.equity_curve) for s in sessions]
+    max_len = max(len(c) for c in full_curves)
+
+    # Pad shorter curves with their final value (bankroll the player walked away with)
     matrix = np.full((len(sessions), max_len), np.nan)
-    for i, s in enumerate(sessions):
-        curve = s.equity_curve
+    for i, curve in enumerate(full_curves):
         matrix[i, : len(curve)] = curve
         if len(curve) < max_len:
-            matrix[i, len(curve) :] = curve[-1] if curve else initial
+            matrix[i, len(curve) :] = curve[-1]
 
     # Downsample to at most 250 points for the chart
     step = max(1, max_len // 250)

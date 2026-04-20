@@ -69,6 +69,17 @@ class TestSimulate:
         for i in range(len(ep["rolls"])):
             assert ep["p5"][i] <= ep["p25"][i] <= ep["p50"][i] <= ep["p75"][i] <= ep["p95"][i]
 
+    def test_percentile_bands_share_x0_with_samples(self, client: TestClient) -> None:
+        body = client.post("/api/simulate", json=_FAST_BODY).json()
+        ep = body["charts"]["equity_percentiles"]
+        sample = body["charts"]["equity_sample"]
+        bankroll = _FAST_BODY["bankroll"]
+        # Every session starts at the same bankroll, so every percentile at x=0 == bankroll
+        for key in ("p5", "p25", "p50", "p75", "p95"):
+            assert ep[key][0] == bankroll
+        # Sample curves agree on what x=0 means
+        assert all(curve[0] == bankroll for curve in sample)
+
     def test_unknown_strategy_returns_400(self, client: TestClient) -> None:
         res = client.post("/api/simulate", json={**_FAST_BODY, "strategy": "not-a-real-preset"})
         assert res.status_code == 400

@@ -17,28 +17,28 @@ export default function EquityChart({ results, bankroll }: Props) {
     const ep = r.charts.equity_percentiles;
     const label = results.length > 1 ? ` (${r.summary.strategy_name})` : "";
 
-    // P5-P95 band
+    // P5-P95 band — outer 90% of sessions
     traces.push({
       x: [...ep.rolls, ...ep.rolls.slice().reverse()],
       y: [...ep.p95, ...ep.p5.slice().reverse()],
       fill: "toself",
       fillcolor: hexToRgba(color, 0.08),
       line: { color: "transparent" },
-      name: `5th–95th${label}`,
-      showlegend: false,
+      name: `90% of sessions (5th–95th pct)${label}`,
+      showlegend: true,
       hoverinfo: "skip",
       type: "scatter",
     });
 
-    // P25-P75 band
+    // P25-P75 band — interquartile range
     traces.push({
       x: [...ep.rolls, ...ep.rolls.slice().reverse()],
       y: [...ep.p75, ...ep.p25.slice().reverse()],
       fill: "toself",
       fillcolor: hexToRgba(color, 0.15),
       line: { color: "transparent" },
-      name: `25th–75th${label}`,
-      showlegend: false,
+      name: `Middle half (25th–75th pct)${label}`,
+      showlegend: true,
       hoverinfo: "skip",
       type: "scatter",
     });
@@ -82,15 +82,15 @@ export default function EquityChart({ results, bankroll }: Props) {
         line: { color: "#94a3b8", width: 1, dash: "dash" as const },
       },
     ],
-    showlegend: results.length > 1,
+    showlegend: true,
     legend: { x: 0.01, y: 0.99, bgcolor: "rgba(255,255,255,0.8)" },
   };
 
   const s = results[0].summary;
   const interp =
-    `The shaded bands show where most sessions end up. ` +
-    `Half the time your bankroll stays between the dark band. ` +
-    `Typical drawdown from peak: $${Math.round(s.mean_drawdown)}.`;
+    `Half of sessions end inside the darker band; 90% inside the lighter band. ` +
+    `The dashed line is your starting bankroll. ` +
+    `Typical peak-to-trough drawdown: $${Math.round(s.mean_drawdown)}.`;
 
   return (
     <ChartCard title="Bankroll Over Time" interp={interp}>

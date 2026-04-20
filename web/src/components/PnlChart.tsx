@@ -36,11 +36,26 @@ export default function PnlChart({ results }: Props) {
     legend: { x: 0.01, y: 0.99, bgcolor: "rgba(255,255,255,0.8)" },
   };
 
-  // Build interpretation text
-  const s = results[0].summary;
-  const interp = `Most likely outcome: around ${fmtPnl(s.median_pnl)}. ` +
-    `Results range from about ${fmtPnl(s.percentile_5)} to ${fmtPnl(s.percentile_95)} ` +
-    `in 90% of sessions.`;
+  // Build interpretation text — one sentence per strategy in compare mode
+  const interp =
+    results.length > 1
+      ? results
+          .map((r) => {
+            const s = r.summary;
+            return (
+              `${s.strategy_name}: median ${fmtPnl(s.median_pnl)}, ` +
+              `90% between ${fmtPnl(s.percentile_5)} and ${fmtPnl(s.percentile_95)}.`
+            );
+          })
+          .join(" ")
+      : (() => {
+          const s = results[0].summary;
+          return (
+            `Most likely outcome: around ${fmtPnl(s.median_pnl)}. ` +
+            `Results range from about ${fmtPnl(s.percentile_5)} to ${fmtPnl(s.percentile_95)} ` +
+            `in 90% of sessions.`
+          );
+        })();
 
   return (
     <ChartCard title="P&L Distribution" interp={interp}>

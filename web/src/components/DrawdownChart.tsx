@@ -27,9 +27,11 @@ export default function DrawdownChart({ results }: Props) {
   };
 
   const s = results[0].summary;
+  const bustPct = Math.round(s.bust_rate * 100);
   const interp =
-    `On average, your bankroll dips $${Math.round(s.mean_drawdown)} below its peak before recovering. ` +
-    `This is the worst dip you'd see in a typical session — plan your bankroll accordingly.`;
+    `Average peak-to-trough drop is $${Math.round(s.mean_drawdown)} per session, ` +
+    `including the ${bustPct}% of sessions that busted (entire bankroll lost). ` +
+    `Size your bankroll for the deep end of this distribution, not the mean.`;
 
   return (
     <ChartCard title="Drawdown Distribution" interp={interp}>

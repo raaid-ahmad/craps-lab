@@ -6,9 +6,10 @@ import ChartCard from "./ChartCard";
 
 interface Props {
   results: SimulateResponse[];
+  bankroll: number;
 }
 
-export default function EquityChart({ results }: Props) {
+export default function EquityChart({ results, bankroll }: Props) {
   const traces: Data[] = [];
 
   results.forEach((r, si) => {
@@ -67,10 +68,6 @@ export default function EquityChart({ results }: Props) {
       });
     });
   });
-
-  const bankroll = results[0].summary.session_count > 0
-    ? results[0].charts.equity_sample[0]?.[0] ?? 500
-    : 500;
 
   const layout = {
     ...BASE_LAYOUT,

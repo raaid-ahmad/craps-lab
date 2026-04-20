@@ -12,6 +12,7 @@ export default function App() {
   const [results, setResults] = useState<SimulateResponse[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [configLabel, setConfigLabel] = useState("");
+  const [bankroll, setBankroll] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -36,6 +37,7 @@ export default function App() {
 
     const label = `$${config.bankroll} bankroll | ${config.hours}h (${Math.round(config.hours * config.rollsPerHour)} rolls) | ${config.sessions.toLocaleString()} sessions`;
     setConfigLabel(label);
+    setBankroll(config.bankroll);
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -119,7 +121,7 @@ export default function App() {
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               <PnlChart results={results} />
-              <EquityChart results={results} />
+              <EquityChart results={results} bankroll={bankroll} />
             </div>
 
             <DrawdownChart results={results} />

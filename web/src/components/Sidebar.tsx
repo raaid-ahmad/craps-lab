@@ -50,6 +50,15 @@ export default function Sidebar({ onRun, loading }: Props) {
       });
   }, []);
 
+  // Keep the comparison strategy distinct from the primary one — without this,
+  // the dropdown filter hides the duplicate option but the state stays stale.
+  useEffect(() => {
+    if (compare && strategyB === strategy) {
+      const alt = presets.find((p) => p.slug !== strategy);
+      if (alt) setStrategyB(alt.slug);
+    }
+  }, [compare, strategy, strategyB, presets]);
+
   const handleRun = () => {
     onRun({
       strategy,

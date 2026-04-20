@@ -61,7 +61,7 @@ def _build_equity_percentiles(campaign: CampaignResult) -> EquityPercentiles:
     # Downsample to at most 250 points for the chart
     step = max(1, max_len // 250)
     indices = list(range(0, max_len, step))
-    if indices[-1] != max_len - 1:
+    if indices and indices[-1] != max_len - 1:
         indices.append(max_len - 1)
 
     sampled = matrix[:, indices]

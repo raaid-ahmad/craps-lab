@@ -14,7 +14,6 @@ from .schemas import (
     CompareRequest,
     CompareResponse,
     PresetInfo,
-    PresetParam,
     SimulateRequest,
     SimulateResponse,
 )
@@ -23,36 +22,24 @@ from .serializers import serialize_campaign
 router = APIRouter(prefix="/api")
 
 # Strategy metadata for the frontend
-_PRESET_META: dict[str, dict[str, object]] = {
+_PRESET_META: dict[str, dict[str, str]] = {
     "pass-line-with-odds": {
         "name": "Pass Line with Odds",
         "description": (
             "Pass line on come-out, 3-4-5x odds behind the point. The textbook low-edge play."
         ),
-        "params": [
-            PresetParam(name="line_amount", default=5, description="Pass line wager"),
-        ],
     },
     "iron-cross": {
         "name": "Iron Cross",
         "description": (
             "Field + place 5/6/8. Wins on every number except 7. Feels great until it doesn't."
         ),
-        "params": [
-            PresetParam(name="line_amount", default=5, description="Pass line wager"),
-            PresetParam(name="place_inside", default=6, description="Place 6/8 wager"),
-            PresetParam(name="place_outside", default=5, description="Place 5 wager"),
-            PresetParam(name="field_amount", default=5, description="Field wager"),
-        ],
     },
     "three-point-molly": {
         "name": "Three Point Molly",
         "description": (
             "Pass line + two come bets, all with odds. Three points working at all times."
         ),
-        "params": [
-            PresetParam(name="line_amount", default=5, description="Line/come wager"),
-        ],
     },
 }
 
@@ -85,18 +72,10 @@ def health() -> dict[str, str]:
 
 @router.get("/presets")
 def list_presets() -> list[PresetInfo]:
-    results: list[PresetInfo] = []
-    for slug in PRESETS:
-        meta = _PRESET_META[slug]
-        results.append(
-            PresetInfo(
-                slug=slug,
-                name=str(meta["name"]),
-                description=str(meta["description"]),
-                params=meta["params"],  # type: ignore[arg-type]
-            )
-        )
-    return results
+    return [
+        PresetInfo(slug=slug, name=meta["name"], description=meta["description"])
+        for slug, meta in ((s, _PRESET_META[s]) for s in PRESETS)
+    ]
 
 
 def _make_config(req: SimulateRequest | CompareRequest) -> SessionConfig:
@@ -116,7 +95,7 @@ def _resolve_strategy(slug: str) -> Strategy:
 
 
 def _display_name(slug: str) -> str:
-    return str(_PRESET_META[slug]["name"])
+    return _PRESET_META[slug]["name"]
 
 
 def _resolve_seed(seed: int | None) -> int:

@@ -1,14 +1,7 @@
-export interface PresetParam {
-  name: string;
-  default: number;
-  description: string;
-}
-
 export interface PresetInfo {
   slug: string;
   name: string;
   description: string;
-  params: PresetParam[];
 }
 
 export interface SummaryStats {

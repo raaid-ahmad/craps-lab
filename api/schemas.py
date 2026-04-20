@@ -54,17 +54,10 @@ class CompareRequest(BaseModel):
 # ------------------------------------------------------------------
 
 
-class PresetParam(BaseModel):
-    name: str
-    default: int
-    description: str
-
-
 class PresetInfo(BaseModel):
     slug: str
     name: str
     description: str
-    params: list[PresetParam]
 
 
 class SummaryStats(BaseModel):

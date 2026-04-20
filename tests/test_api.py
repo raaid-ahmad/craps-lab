@@ -50,7 +50,6 @@ class TestPresets:
         entry = next(p for p in client.get("/api/presets").json() if p["slug"] == "iron-cross")
         assert entry["name"]
         assert entry["description"]
-        assert len(entry["params"]) >= 1
 
     def test_metadata_matches_strategy_registry(self) -> None:
         # If this fails, a new preset was added to the engine without UI metadata.
